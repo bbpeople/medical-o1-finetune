@@ -5,7 +5,7 @@
 # 安装: pip install -r requirements.txt
 
 # --- Unsloth 核心 (2026年最新) ---
-unsloth>=2026.0.0
+unsloth>=2026.0.0                        # Windows 见下方 "Windows 注意事项"
 unsloth_zoo>=2026.0.0
 
 # --- 基础框架 ---
@@ -33,3 +33,19 @@ wandb                               # 可选: 在线监控
 # --- 推理 / 导出 ---
 # llama-cpp-python                 # GGUF 推理 (可选)
 # vllm                              # 高性能推理 (可选)
+
+
+# =============================================================================
+# Windows 注意事项
+# =============================================================================
+# 1. unsloth: 如果 pip install 失败，尝试以下两种方式之一：
+#    a) pip install "unsloth[windows] @ git+https://github.com/unslothai/unsloth.git"
+#    b) 使用 Docker: unsloth/unsloth (推荐，避免环境问题)
+#
+# 2. bitsandbytes: Windows 需要 CUDA 12.1+ 运行时。
+#    如果 import bitsandbytes 失败，检查 CUDA 版本:
+#       nvidia-smi
+#    并确保 Visual C++ Redistributable 已安装。
+#
+# 3. DataLoader: 脚本已设 num_workers=0 (Windows spawn 模式兼容)，
+#    请勿手动改大，否则可能卡死或 OOM。

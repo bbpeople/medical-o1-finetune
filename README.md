@@ -23,6 +23,9 @@
 | 有效 batch | 8 (per_device=2 × gradient_accum=4) |
 | 最大长度 | 2048 tokens |
 | 学习率 | 2e-4, cosine 衰减 |
+| 梯度裁剪 | max_grad_norm=0.3 |
+| 验证集 | 从训练集切 5%，每 100 步评估 |
+| Loss 计算 | 仅 assistant 回复部分 (`train_on_responses_only`)
 
 ## 环境要求
 
@@ -66,9 +69,15 @@ python train_medical_o1.py --resume_from_checkpoint ./output_qwen05b_medical_o1/
 
 ### 训练监控
 
+训练时会每 100 步输出验证 loss，注意观察 eval loss 是否反弹（过拟合信号）：
+
 ```bash
 tensorboard --logdir ./output_qwen05b_medical_o1
 ```
+
+TensorBoard 中重点关注：
+- **train/loss** — 训练 loss 应持续下降
+- **eval/loss** — 验证 loss 下降后若开始上升，说明过拟合，应提前停止或增加数据
 
 ## 输出文件
 
