@@ -54,9 +54,17 @@ WARMUP_STEPS = 50
 LR_SCHEDULER = "cosine"
 OPTIMIZER = "adamw_8bit"             # 8-bit 优化器省显存
 WEIGHT_DECAY = 0.01
+MAX_GRAD_NORM = 0.3                  # 梯度裁剪，防止 outlier 导致 loss 爆炸
 LOGGING_STEPS = 10
 SAVE_STEPS = 200
 SAVE_TOTAL_LIMIT = 3                 # 只保留最近 3 个 checkpoint
+EVAL_STEPS = 100                     # 每 100 步验证一次
+
+# --- 数据 ---
+DATASET_NAME = "FreedomIntelligence/medical-o1-reasoning-SFT"
+DATASET_CONFIG = "en"                # 英文子集
+DATASET_SPLIT = "train"
+EVAL_SPLIT_RATIO = 0.05              # 从训练集切 5% 做验证
 
 # --- 数据 ---
 DATASET_NAME = "FreedomIntelligence/medical-o1-reasoning-SFT"
@@ -181,23 +189,33 @@ def main():
 
     # ── 3. 加载数据集 ──
     print(f"\n[3/5] 加载数据集 {DATASET_NAME} ({DATASET_CONFIG})...")
-    dataset = load_dataset(DATASET_NAME, DATASET_CONFIG, split=DATASET_SPLIT)
-    print(f"  原始样本数: {len(dataset)}")
+    full_dataset = load_dataset(DATASET_NAME, DATASET_CONFIG, split=DATASET_SPLIT)
+    print(f"  原始样本数: {len(full_dataset)}")
 
     # 数据预览
     print("\n  数据样例 (第一条):")
-    print(f"    Question:  {dataset[0]['Question'][:120]}...")
-    print(f"    Complex_CoT: {dataset[0]['Complex_CoT'][:120]}...")
-    print(f"    Response:  {dataset[0]['Response'][:120]}...")
+    print(f"    Question:  {full_dataset[0]['Question'][:120]}...")
+    print(f"    Complex_CoT: {full_dataset[0]['Complex_CoT'][:120]}...")
+    print(f"    Response:  {full_dataset[0]['Response'][:120]}...")
+
+    # 划分训练/验证集
+    split_dataset = full_dataset.train_test_split(
+        test_size=EVAL_SPLIT_RATIO, seed=3407
+    )
+    train_dataset = split_dataset["train"]
+    eval_dataset = split_dataset["test"]
+    print(f"  训练集: {len(train_dataset)} | 验证集: {len(eval_dataset)}")
 
     # 预处理
-    dataset = preprocess_dataset(dataset, tokenizer)
-    print(f"  预处理后样本数: {len(dataset)}")
+    train_dataset = preprocess_dataset(train_dataset, tokenizer)
+    eval_dataset = preprocess_dataset(eval_dataset, tokenizer)
+    print(f"  预处理后: 训练 {len(train_dataset)} | 验证 {len(eval_dataset)}")
 
     # 预估 token 分布
-    token_lengths = [len(tokenizer.encode(t)) for t in dataset["text"]]
-    print(f"  Token 长度:  avg={sum(token_lengths)/len(token_lengths):.0f}  "
-          f"max={max(token_lengths)}  min={min(token_lengths)}")
+    for name, ds in [("训练", train_dataset), ("验证", eval_dataset)]:
+        lengths = [len(tokenizer.encode(t)) for t in ds["text"]]
+        print(f"  {name} Token 长度:  avg={sum(lengths)/len(lengths):.0f}  "
+              f"max={max(lengths)}  min={min(lengths)}")
 
     # ── 4. 配置训练器 ──
     print("\n[4/5] 配置 SFTTrainer...")
@@ -217,16 +235,18 @@ def main():
         lr_scheduler_type=LR_SCHEDULER,
         optim=OPTIMIZER,
         weight_decay=WEIGHT_DECAY,
+        max_grad_norm=MAX_GRAD_NORM,
         logging_steps=LOGGING_STEPS,
         save_steps=SAVE_STEPS,
         save_total_limit=SAVE_TOTAL_LIMIT,
         save_strategy="steps",
-        evaluation_strategy="no",
+        evaluation_strategy="steps",
+        eval_steps=EVAL_STEPS,
         fp16=not use_bf16,
         bf16=use_bf16,
-        report_to=["tensorboard"],               # 可以用 `tensorboard --logdir output` 查看
+        report_to=["tensorboard"],
         remove_unused_columns=False,
-        dataloader_num_workers=2,
+        dataloader_num_workers=0,                # Windows spawn 模式设 0 避免 CUDA 死锁
         ddp_find_unused_parameters=False if torch.cuda.device_count() > 1 else None,
         seed=3407,
         data_seed=3407,
@@ -235,7 +255,8 @@ def main():
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
-        train_dataset=dataset,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         args=training_args,
         max_seq_length=MAX_SEQ_LENGTH,
         dataset_text_field="text",
