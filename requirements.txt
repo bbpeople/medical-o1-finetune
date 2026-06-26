@@ -1,0 +1,35 @@
+# =============================================================================
+# Qwen2.5-0.5B + Unsloth + QLoRA 医疗问答微调 - 依赖
+# =============================================================================
+# 推荐 Python 3.10+ / CUDA 12.1+
+# 安装: pip install -r requirements.txt
+
+# --- Unsloth 核心 (2026年最新) ---
+unsloth>=2026.0.0
+unsloth_zoo>=2026.0.0
+
+# --- 基础框架 ---
+torch>=2.5.0
+torchvision
+torchaudio
+xformers                           # 加速 attention
+
+# --- Hugging Face 生态 ---
+transformers>=4.56.0
+datasets>=3.0.0
+trl>=0.22.0
+peft>=0.14.0
+accelerate>=1.5.0
+bitsandbytes>=0.45.0               # 4-bit 量化
+
+# --- 工具 ---
+sentencepiece                       # Qwen2.5 tokenizer
+protobuf
+huggingface_hub>=0.34.0
+hf_transfer                         # 高速下载
+tensorboard                         # 训练可视化
+wandb                               # 可选: 在线监控
+
+# --- 推理 / 导出 ---
+# llama-cpp-python                 # GGUF 推理 (可选)
+# vllm                              # 高性能推理 (可选)

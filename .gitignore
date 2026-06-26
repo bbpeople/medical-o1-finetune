@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Unsloth / HuggingFace 缓存
+.cache/
+.cache/huggingface/
+
+# 训练输出
+output_qwen05b_medical_o1/
+checkpoints/
+
+# 大文件
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.gguf
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 环境
+.env
+.venv/
+venv/
+
+# 日志
+logs/
+*.log
+
+# 临时文件
+*.tmp
+.ipynb_checkpoints/
