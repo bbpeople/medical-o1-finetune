@@ -33,15 +33,35 @@
 - **CUDA**: 12.1+
 - **Python**: 3.10+
 
-### 安装
+### 安装 (Windows 完整指南)
+
+推荐使用 conda 创建独立环境（你已安装 Anaconda，跳过第一步）：
 
 ```bash
+# 1. 创建 conda 环境（Python 3.12）
+conda create --name unsloth_env python=3.12 -y
+conda activate unsloth_env
+
+# 2. 安装 PyTorch（CUDA 版本，与驱动匹配）
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+
+# 3. 验证 CUDA 可用
+python -c "import torch; print(f'CUDA: {torch.cuda.is_available()}'); print(torch.cuda.get_device_name(0))"
+
+# 4. 安装 Unsloth（Windows 原生支持，2026 年已无需额外配置）
+pip install unsloth
+
+# 5. 安装本项目依赖
 pip install -r requirements.txt
 ```
 
-> **Windows 用户注意**: 
-> - bitsandbytes 需要 CUDA 工具包，请确保已安装 CUDA 12.1+
-> - 如果 `pip install unsloth` 有问题，参考 [Unsloth Windows 安装指南](https://unsloth.ai/docs/get-started/install/windows)
+> **⚠️ 重要**: 第 2、4、5 步必须在 `unsloth_env` 环境下执行（`conda activate unsloth_env` 后），
+> 不要在 hermes-agent 或其他 venv 中安装，否则 GPU 可能无法识别。
+
+> **Troubleshooting**:
+> - `bitsandbytes` 报错：安装 Visual Studio Build Tools 或使用 `pip install bitsandbytes --prefer-binary`
+> - `xformers` 编译失败：先安装 `conda install xformers -c xformers`
+> - 其他问题参考 [Unsloth Windows 官方指南](https://unsloth.ai/docs/get-started/install/windows-installation)
 
 ## 训练
 
@@ -99,7 +119,7 @@ output_qwen05b_medical_o1/
 ## 推理示例
 
 ```python
-from unsloth import FastLanguageModel
+from unsloth import FastLanguageModel, is_bfloat16_supported
 from transformers import TextStreamer
 
 # 加载合并后的模型
@@ -131,6 +151,34 @@ _ = model.generate(
     top_p=0.9,
 )
 ```
+
+## 评估
+
+训练完成后，用 `eval_medical_o1.py` 评估模型效果：
+
+```bash
+# 评估 LoRA 适配器 (从数据集尾部取 5 条测试)
+python eval_medical_o1.py
+
+# 采样 10 条 + 保存详细结果
+python eval_medical_o1.py --num_samples 10 --output eval_results.txt
+
+# 评估指定 checkpoint
+python eval_medical_o1.py --checkpoint ./output_qwen05b_medical_o1/checkpoint-500
+```
+
+评估脚本会：
+1. 加载训练好的 LoRA 适配器
+2. 从数据集中取尾部 N 条（训练未见过的样本）
+3. 逐条生成回答，显示推理链和最终答案
+4. 对比标准答案，给出关键词重叠率（仅供参考）
+5. 保存详细结果到文件（可选）
+
+> **怎么看评估结果**：
+> - 模型应输出 `<think>推理过程</think>答案` 格式
+> - 关键词重叠率 > 50% 通常表示回答方向正确
+> - 建议逐条人工判断：医学内容准确比措辞匹配更重要
+> - 如果推理链合理但答案措辞不同，重叠率偏低是正常的
 
 ## 显存优化技巧 (4GB VRAM)
 
