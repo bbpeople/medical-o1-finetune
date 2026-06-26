@@ -119,27 +119,29 @@ def main():
 
     # ── 1. 加载模型 + LoRA 适配器 ──
     print("\n[1/3] 加载模型 + LoRA 适配器...")
+    # FastLanguageModel.from_pretrained 能自动识别 adapter 路径,
+    # 读取 adapter_config.json 中引用的基座模型后加载 LoRA 权重,
+    # 同时保留 Unsloth 的优化内核（比 PeftModel.from_pretrained 更快）
     model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=MODEL_NAME,
+        model_name=adapter_path,
         max_seq_length=MAX_SEQ_LENGTH,
         dtype=None,
         load_in_4bit=True,
     )
-    # 加载 PEFT LoRA 权重
-    from peft import PeftModel
-    model = PeftModel.from_pretrained(model, adapter_path)
     FastLanguageModel.for_inference(model)
 
     # chat template
     tokenizer = get_chat_template(tokenizer, chat_template="qwen-2.5")
 
-    # ── 2. 加载数据集，取尾部样本作为测试 ──
+    # ── 2. 加载数据集，使用与训练一致的 5% 验证集划分 ──
     print("\n[2/3] 加载评估数据...")
+    # 与 train_medical_o1.py 中 train_test_split(test_size=0.05, seed=3407) 一致
     full_dataset = load_dataset(DATASET_NAME, DATASET_CONFIG, split="train")
-    test_samples = full_dataset.select(
-        range(max(0, len(full_dataset) - args.num_samples), len(full_dataset))
+    _, eval_dataset = full_dataset.train_test_split(test_size=0.05, seed=3407)
+    test_samples = eval_dataset.select(
+        range(min(args.num_samples, len(eval_dataset)))
     )
-    print(f"  取了 {len(test_samples)} 条测试样本 (数据集尾部，训练未见过的)")
+    print(f"  取了 {len(test_samples)} 条测试样本 (从 5% 验证集采样，训练未见过的)")
 
     # ── 3. 逐条评估 ──
     print(f"\n[3/3] 开始评估...\n")

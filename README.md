@@ -234,9 +234,9 @@ python train_medical_o1.py
 > ⚠️ **过拟合信号**：train loss 继续降，但 eval loss 开始上升 → 应提前停止或增加数据。
 >
 > ⏱ **预计耗时**：
-> - 3 epoch、48752 条训练数据、有效 batch=8 → 约 **18,000 步**
-> - 每步约 4-5 秒 → **总耗时约 20-25 小时**
-> - 快速验证（1 epoch）：`python train_medical_o1.py --num_epochs 1` → 约 7-8 小时
+> - 3 epoch、18752 条训练数据、有效 batch=8 → 约 **7,000 步**
+> - 每步约 4-5 秒 → **总耗时约 8-10 小时**
+> - 快速验证（1 epoch）：`python train_medical_o1.py --num_epochs 1` → 约 3 小时
 
 **训练完成后输出**：
 
