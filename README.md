@@ -19,7 +19,7 @@
 | 优化框架 | Unsloth (手写 Triton 内核，2x 加速，70% 省显存) |
 | LoRA rank | 16 |
 | 目标模块 | 全部线性层 (q/k/v/o/gate/up/down) |
-| 训练精度 | FP16 (RTX 3050 不支持 BF16) |
+| 训练精度 | BF16 (RTX 3050 Ampere 架构支持 BF16) |
 | 有效 batch | 8 (per_device=2 × gradient_accum=4) |
 | 最大长度 | 2048 tokens |
 | 学习率 | 2e-4, cosine 衰减 |
@@ -64,7 +64,7 @@ python train_medical_o1.py --max_steps 200
 python train_medical_o1.py --resume_from_checkpoint ./output_qwen05b_medical_o1/checkpoint-200
 
 # 混合数据训练（英文 + 中文）
-# 修改脚本中 DATASET_CONFIG = "mix" 或手动合并数据集
+# 修改脚本中 DATASET_CONFIG = "en_mix" (英文+中文混合) 或手动合并数据集
 ```
 
 ### 训练监控

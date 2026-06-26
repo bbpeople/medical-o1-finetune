@@ -17,18 +17,18 @@ xformers                           # 加速 attention
 # --- Hugging Face 生态 ---
 transformers>=4.56.0
 datasets>=3.0.0
-trl>=0.22.0
+trl>=0.22.0,<1.0                          # 1.x 有 breaking change，暂不升级
 peft>=0.14.0
 accelerate>=1.5.0
 bitsandbytes>=0.45.0               # 4-bit 量化
 
 # --- 工具 ---
 sentencepiece                       # Qwen2.5 tokenizer
-protobuf
+protobuf>=3.20.0
 huggingface_hub>=0.34.0
-hf_transfer                         # 高速下载
+# hf_transfer                       # 高速下载 (Windows 需 Rust 编译环境，未安装请取消注释)
 tensorboard                         # 训练可视化
-wandb                               # 可选: 在线监控
+# wandb                             # 可选: 在线监控 (本项目暂未启用)
 
 # --- 推理 / 导出 ---
 # llama-cpp-python                 # GGUF 推理 (可选)
