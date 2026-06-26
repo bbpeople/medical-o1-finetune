@@ -10,8 +10,6 @@
 """
 
 import os
-import sys
-import gc
 import torch
 import argparse
 from datasets import load_dataset

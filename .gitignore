@@ -7,7 +7,6 @@ build/
 
 # Unsloth / HuggingFace 缓存
 .cache/
-.cache/huggingface/
 
 # 训练输出
 output_qwen05b_medical_o1/
@@ -17,7 +16,6 @@ checkpoints/
 *.bin
 *.pt
 *.pth
-*.safetensors
 *.gguf
 
 # IDE

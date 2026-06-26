@@ -7,7 +7,7 @@
 **[FreedomIntelligence/medical-o1-reasoning-SFT](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT)**
 
 - 医学推理 SFT 数据集，含 **Question → Complex_CoT (推理链) → Response (答案)**
-- 英文 ~35K 条 + 中文 ~30K 条
+- 英文 ~19.7K 条 + 中文 ~20.2K 条（en_mix ~24.9K, zh_mix ~25.4K）
 - 数据源自 GPT-4o + DeepSeek-R1 蒸馏，经医学验证器校验
 
 ## 方法
