@@ -66,11 +66,6 @@ DATASET_CONFIG = "en"                # 英文子集
 DATASET_SPLIT = "train"
 EVAL_SPLIT_RATIO = 0.05              # 从训练集切 5% 做验证
 
-# --- 数据 ---
-DATASET_NAME = "FreedomIntelligence/medical-o1-reasoning-SFT"
-DATASET_CONFIG = "en"                # 英文子集
-DATASET_SPLIT = "train"
-
 # --- 输出 ---
 OUTPUT_DIR = "./output_qwen05b_medical_o1"
 HUB_MODEL_ID = None                  # 如要上传 HF 请填写 "your-namespace/model-name"
