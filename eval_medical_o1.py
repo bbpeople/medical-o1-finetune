@@ -21,7 +21,7 @@ import argparse
 from datasets import load_dataset
 from transformers import TextStreamer
 
-from unsloth import FastLanguageModel, is_bfloat16_supported
+from unsloth import FastLanguageModel
 from unsloth.chat_templates import get_chat_template
 
 # ── 配置（与训练脚本保持一致）──
