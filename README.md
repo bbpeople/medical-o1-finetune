@@ -29,12 +29,15 @@
 | Python | 3.10 或 3.12 |
 | 硬盘 | ≥ 10GB 可用空间 |
 
+> **前置条件**：需要先安装 Miniconda 或 Anaconda。
+> - 如果没有，从 <https://docs.anaconda.com/miniconda/> 下载 **Miniconda**（推荐，轻量）
+> - 或从 <https://www.anaconda.com/download> 下载 **Anaconda**
+> - 安装后打开 **Anaconda Prompt** 或 **Git Bash** 继续下面的步骤
+
 ### Step 1: 创建 conda 环境
 
-打开 **Git Bash** 或 **Anaconda Prompt**，执行：
-
 ```bash
-# 创建独立环境（已有 Anaconda 的话不需要重装）
+# 创建独立环境
 conda create --name unsloth_env python=3.12 -y
 ```
 
@@ -53,11 +56,11 @@ conda activate unsloth_env
 nvidia-smi
 ```
 
-**预期输出**（类似下面的内容）：
+**预期输出**（类似下面的内容，CUDA 版本取决于驱动版本）：
 
 ```
 +-----------------------------------------------------------------------------------------+
-| NVIDIA-SMI 610.47                 Driver Version: 610.47       CUDA Version: 13.3      |
+| NVIDIA-SMI 560.94                 Driver Version: 560.94       CUDA Version: 12.6      |
 |-----------------------------------+----------------------+----------------------+
 | GPU  Name                  TCC   | Bus-Id        Disp.A | Volatile Uncorr. ECC |
 | Fan  Temp  Perf  Pwr:Usage/Cap |         Memory-Usage | GPU-Util  Compute M. |
@@ -68,16 +71,27 @@ nvidia-smi
 +-----------------------------------+----------------------+----------------------+
 ```
 
+> 💡 记住右上角的 **CUDA Version**（例如 12.6），下一步要用。
+
 > ⚠️ 如果没有输出，说明 NVIDIA 驱动没装好，先装驱动。
 
 ### Step 3: 安装 PyTorch（带 CUDA）
+
+先看 Step 2 输出的 **CUDA Version**，然后选择对应的 PyTorch 安装命令：
+
+| 右上角 CUDA Version | 安装命令 |
+|-------------------|----------|
+| ≥ 12.6 | `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126` |
+| 12.4 - 12.5 | `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` |
+| 12.1 - 12.3 | `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121` |
+| 不确定/其他 | 去 <https://pytorch.org> 按页面提示选择配置并复制安装命令 |
 
 ```bash
 # 必须确保在 unsloth_env 环境下
 conda activate unsloth_env
 
-# 安装 PyTorch（cu130 = CUDA 13.0，兼容 13.x 驱动）
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
+# 示例：如果 CUDA Version 是 12.6，执行以下命令：
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
 ```
 
 **预期耗时**：1-5 分钟（约 2GB 下载）。
@@ -95,10 +109,10 @@ print(f'BF16 支持:    {torch.cuda.is_bf16_supported()}')
 "
 ```
 
-**预期输出**：
+**预期输出**（版本号以实际安装为准）：
 
 ```
-PyTorch 版本: 2.10.0+cu130
+PyTorch 版本: 2.x.x+cuXXX
 CUDA 可用:    True
 GPU 名称:     NVIDIA GeForce RTX 3050 Laptop GPU
 显存总量:     4.00 GB
@@ -113,8 +127,19 @@ BF16 支持:    True
 
 ### Step 5: 安装 Unsloth
 
+根据操作系统选择安装方式：
+
+**Windows：**
+
 ```bash
-# 继续在 unsloth_env 环境里
+# Windows 需要从 GitHub 源码安装（含 Windows 特定补丁）
+pip install "unsloth[windows] @ git+https://github.com/unslothai/unsloth.git"
+```
+
+**Linux：**
+
+```bash
+# Linux 可以直接 pip 安装
 pip install unsloth
 ```
 
@@ -134,23 +159,27 @@ print(f'BF16 支持: {is_bfloat16_supported()}')
 > ❌ 如果报 `xformers` 相关错误，尝试：
 > ```bash
 > conda install xformers -c xformers
-> pip install unsloth
+> # 然后根据操作系统重新安装 Unsloth（见上方 Step 5 命令）
 > ```
 
 ### Step 6: 安装项目依赖
 
 ```bash
 # 进入项目目录
-cd D:/youxi/Trae/Trae_EN/test3
+cd 项目所在目录（如 `D:/projects/medical-o1-finetune`）
 
 # 安装项目依赖
 pip install -r requirements.txt
 ```
 
+> **Windows 注意事项**（详见 `requirements.txt` 末尾的说明）：
+> 1. **bitsandbytes** 在 Windows 上需要 **Visual C++ Redistributable**（通常已预装，若报错去 https://aka.ms/vs/17/release/vc_redist.x64.exe 安装）
+> 2. 如果 `pip install -r requirements.txt` 卡在 Unsloth 编译步骤，可以用 Docker 替代：`docker run -it --gpus all -v .:/workspace unsloth/unsloth`
+
 ### Step 7: 验证全部安装成功
 
 ```bash
-cd D:/youxi/Trae/Trae_EN/test3
+cd 项目所在目录（如 `D:/projects/medical-o1-finetune`）
 
 python -c "
 import torch
@@ -174,7 +203,7 @@ print(f'CUDA: {torch.cuda.is_available()}, GPU: {torch.cuda.get_device_name(0)}'
 conda activate unsloth_env
 
 # 进入项目目录
-cd D:/youxi/Trae/Trae_EN/test3
+cd 项目所在目录（如 `D:/projects/medical-o1-finetune`）
 
 # 开始训练
 python train_medical_o1.py
@@ -296,7 +325,7 @@ TensorBoard 中重点关注两个曲线：
 
 ```bash
 conda activate unsloth_env
-cd D:/youxi/Trae/Trae_EN/test3
+cd 项目所在目录（如 `D:/projects/medical-o1-finetune`）
 
 python eval_medical_o1.py
 ```
