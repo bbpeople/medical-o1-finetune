@@ -38,9 +38,9 @@ tensorboard                         # 训练可视化
 # =============================================================================
 # Windows 注意事项
 # =============================================================================
-# 1. unsloth: 如果 pip install 失败，尝试以下两种方式之一：
-#    a) pip install "unsloth[windows] @ git+https://github.com/unslothai/unsloth.git"
-#    b) 使用 Docker: unsloth/unsloth (推荐，避免环境问题)
+# 1. unsloth: Windows 上 pip install unsloth 可直接安装（需先装 PyTorch）。
+#    如果安装失败，参考官方 Windows 指南:
+#    https://unsloth.ai/docs/get-started/install/windows-installation
 #
 # 2. bitsandbytes: Windows 需要 CUDA 12.1+ 运行时。
 #    如果 import bitsandbytes 失败，检查 CUDA 版本:

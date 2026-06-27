@@ -81,7 +81,8 @@ nvidia-smi
 
 | 右上角 CUDA Version | 安装命令 |
 |-------------------|----------|
-| ≥ 12.6 | `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126` |
+| ≥ 13.0（推荐） | `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130` |
+| 12.6 - 12.8 | `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126` |
 | 12.4 - 12.5 | `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124` |
 | 12.1 - 12.3 | `pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121` |
 | 不确定/其他 | 去 <https://pytorch.org> 按页面提示选择配置并复制安装命令 |
@@ -90,8 +91,8 @@ nvidia-smi
 # 必须确保在 unsloth_env 环境下
 conda activate unsloth_env
 
-# 示例：如果 CUDA Version 是 12.6，执行以下命令：
-pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+# 推荐：如果驱动较新（CUDA ≥ 13.0），使用 cu130
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130
 ```
 
 **预期耗时**：1-5 分钟（约 2GB 下载）。
@@ -127,19 +128,8 @@ BF16 支持:    True
 
 ### Step 5: 安装 Unsloth
 
-根据操作系统选择安装方式：
-
-**Windows：**
-
 ```bash
-# Windows 需要从 GitHub 源码安装（含 Windows 特定补丁）
-pip install "unsloth[windows] @ git+https://github.com/unslothai/unsloth.git"
-```
-
-**Linux：**
-
-```bash
-# Linux 可以直接 pip 安装
+# 继续在 unsloth_env 环境里
 pip install unsloth
 ```
 
@@ -159,7 +149,7 @@ print(f'BF16 支持: {is_bfloat16_supported()}')
 > ❌ 如果报 `xformers` 相关错误，尝试：
 > ```bash
 > conda install xformers -c xformers
-> # 然后根据操作系统重新安装 Unsloth（见上方 Step 5 命令）
+> pip install unsloth
 > ```
 
 ### Step 6: 安装项目依赖
@@ -174,7 +164,12 @@ pip install -r requirements.txt
 
 > **Windows 注意事项**（详见 `requirements.txt` 末尾的说明）：
 > 1. **bitsandbytes** 在 Windows 上需要 **Visual C++ Redistributable**（通常已预装，若报错去 https://aka.ms/vs/17/release/vc_redist.x64.exe 安装）
-> 2. 如果 `pip install -r requirements.txt` 卡在 Unsloth 编译步骤，可以用 Docker 替代：`docker run -it --gpus all -v .:/workspace unsloth/unsloth`
+> 2. **Docker 替代方案**需要 **WSL2 后端** + **CUDA on WSL2 驱动**才能使用 `--gpus all`：
+>    ```bash
+>    # 先确保 Docker Desktop 使用 WSL2 后端
+>    # 然后运行 unsloth 容器
+>    docker run -it --gpus all -v .:/workspace unsloth/unsloth
+>    ```
 
 ### Step 7: 验证全部安装成功
 
