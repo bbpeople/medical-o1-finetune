@@ -14,6 +14,7 @@
 =============================================================================
 """
 
+import unsloth  # Unsloth 必须最先 import，确保优化补丁生效
 import os
 import re
 import torch
