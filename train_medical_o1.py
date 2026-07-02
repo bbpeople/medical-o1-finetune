@@ -10,6 +10,7 @@
 """
 
 import os
+os.environ["UNSLOTH_RETURN_LOGITS"] = "1"       # 跳过 fused CE，走标准 logits（4GB VRAM 必须）
 import torch
 import argparse
 from datasets import load_dataset
@@ -28,7 +29,7 @@ from trl import SFTTrainer
 
 # --- 模型 ---
 MODEL_NAME = "unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit"
-MAX_SEQ_LENGTH = 2048                # medical-o1 CoT 较长，2048 够用
+MAX_SEQ_LENGTH = 1024                # 4GB VRAM 减半，数据 avg=649 够用
 LOAD_IN_4BIT = True
 DTYPE = None                         # 自动选择 fp16/bf16
 
@@ -43,8 +44,8 @@ TARGET_MODULES = [
 ]
 
 # --- 训练 ---
-BATCH_SIZE = 2                       # 4GB VRAM 下安全值
-GRADIENT_ACCUMULATION_STEPS = 4      # 有效 batch = 2×4 = 8
+BATCH_SIZE = 1                       # 4GB VRAM 最小值
+GRADIENT_ACCUMULATION_STEPS = 8      # 有效 batch = 1×8 = 8，保持不变
 MAX_STEPS = -1                       # -1 表示用 num_train_epochs
 NUM_EPOCHS = 3
 LEARNING_RATE = 2e-4
@@ -274,6 +275,7 @@ def main():
     torch.cuda.reset_peak_memory_stats()
     start_gpu_memory = torch.cuda.max_memory_reserved() / 1024**3
 
+    torch.cuda.empty_cache()          # 清理碎片显存
     trainer_stats = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
 
     # ── 训练完成统计 ──
