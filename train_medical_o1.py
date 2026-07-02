@@ -20,8 +20,53 @@ from datetime import datetime
 from unsloth import FastLanguageModel, is_bfloat16_supported
 from unsloth.chat_templates import get_chat_template, train_on_responses_only
 
-from transformers import TrainingArguments
+from transformers import TrainingArguments, TrainerCallback
 from trl import SFTTrainer
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# 自定义 Callback：绕过 Unsloth pickle 崩溃，手动保存 checkpoint
+# ═════════════════════════════════════════════════════════════════════════
+class ManualSaveCallback(TrainerCallback):
+    """每 save_steps 步用 model.save_pretrained() 保存 checkpoint，不经过 pickle。"""
+
+    def __init__(self, save_steps, output_dir, save_total_limit=3):
+        self.save_steps = save_steps
+        self.output_dir = output_dir
+        self.save_total_limit = save_total_limit
+        self._checkpoint_dirs = []
+        self._last_save_step = 0
+
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.global_step == 0:
+            return control
+        # 检查是否到了保存步数
+        if state.global_step - self._last_save_step >= self.save_steps:
+            self._last_save_step = state.global_step
+            ckpt_dir = os.path.join(self.output_dir, f"checkpoint-{state.global_step}")
+            os.makedirs(ckpt_dir, exist_ok=True)
+            print(f"\n  💾 手动保存 checkpoint → {ckpt_dir}")
+            # 从 kwargs 或 trainer 属性获取 model 和 tokenizer
+            model = kwargs.get("model") or kwargs.get("trainer").model
+            tokenizer = kwargs.get("tokenizer") or getattr(kwargs.get("trainer"), "tokenizer", None)
+            if model is not None:
+                model.save_pretrained(ckpt_dir)
+            if tokenizer is not None:
+                tokenizer.save_pretrained(ckpt_dir)
+            # 保存训练参数（只保存我们自己的配置 dict，避免 pickle 崩溃）
+            torch.save({"step": state.global_step, "best_metric": state.best_metric},
+                       os.path.join(ckpt_dir, "training_state.pt"))
+            self._checkpoint_dirs.append(ckpt_dir)
+            print(f"  ✅ checkpoint-{state.global_step} 保存成功")
+            # 清理旧 checkpoint
+            while len(self._checkpoint_dirs) > self.save_total_limit:
+                old_dir = self._checkpoint_dirs.pop(0)
+                import shutil
+                shutil.rmtree(old_dir, ignore_errors=True)
+                print(f"  🗑️ 清理旧 checkpoint: {old_dir}")
+            print()
+        return control
+
 
 # ═════════════════════════════════════════════════════════════════════════
 # 配置
@@ -233,7 +278,7 @@ def main():
         logging_steps=LOGGING_STEPS,
         save_steps=SAVE_STEPS,
         save_total_limit=SAVE_TOTAL_LIMIT,
-        save_strategy="steps",              # 每 200 步保存，防止 OOM 断电白训
+        save_strategy="no",                # 用自定义 callback 保存（见下方），规避 pickle 崩溃
         eval_strategy="steps",
         eval_steps=EVAL_STEPS,
         fp16=not use_bf16,
@@ -263,6 +308,13 @@ def main():
         instruction_part="<|im_start|>user",
         response_part="<|im_start|>assistant",
     )
+
+    # 注册自定义 checkpoint 保存 callback
+    trainer.add_callback(ManualSaveCallback(
+        save_steps=SAVE_STEPS,
+        output_dir=OUTPUT_DIR,
+        save_total_limit=SAVE_TOTAL_LIMIT,
+    ))
 
     # ── 5. 开始训练 ──
     print("\n[5/5] 开始训练...")
