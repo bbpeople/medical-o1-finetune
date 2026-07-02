@@ -139,7 +139,8 @@ def main():
     print("\n[2/3] 加载评估数据...")
     # 与 train_medical_o1.py 中 train_test_split(test_size=0.05, seed=3407) 一致
     full_dataset = load_dataset(DATASET_NAME, DATASET_CONFIG, split="train")
-    _, eval_dataset = full_dataset.train_test_split(test_size=0.05, seed=3407)
+    split = full_dataset.train_test_split(test_size=0.05, seed=3407)
+    eval_dataset = split["test"]
     test_samples = eval_dataset.select(
         range(min(args.num_samples, len(eval_dataset)))
     )
