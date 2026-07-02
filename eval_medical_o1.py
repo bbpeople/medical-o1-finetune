@@ -14,20 +14,21 @@
 =============================================================================
 """
 
-import unsloth  # Unsloth 必须最先 import，确保优化补丁生效
 import os
 import re
-import torch
 import argparse
-from datasets import load_dataset
-from transformers import TextStreamer
 
+# Unsloth 必须在 transformers 之前导入，确保优化补丁生效
 from unsloth import FastLanguageModel
 from unsloth.chat_templates import get_chat_template
 
+import torch
+from datasets import load_dataset
+from transformers import TextStreamer
+
 # ── 配置（与训练脚本保持一致）──
 MODEL_NAME = "unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit"
-MAX_SEQ_LENGTH = 2048
+MAX_SEQ_LENGTH = 1024              # 与训练脚本一致，4GB VRAM 安全
 DATASET_NAME = "FreedomIntelligence/medical-o1-reasoning-SFT"
 DATASET_CONFIG = "en"
 OUTPUT_DIR = "./output_qwen05b_medical_o1"
