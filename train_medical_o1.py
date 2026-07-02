@@ -233,7 +233,7 @@ def main():
         logging_steps=LOGGING_STEPS,
         save_steps=SAVE_STEPS,
         save_total_limit=SAVE_TOTAL_LIMIT,
-        save_strategy="no",                # Unsloth monkey-patch SFTConfig 导致 pickle 崩溃，禁用中间保存
+        save_strategy="steps",              # 每 200 步保存，防止 OOM 断电白训
         eval_strategy="steps",
         eval_steps=EVAL_STEPS,
         fp16=not use_bf16,
