@@ -233,7 +233,7 @@ def main():
         save_steps=SAVE_STEPS,
         save_total_limit=SAVE_TOTAL_LIMIT,
         save_strategy="steps",
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=EVAL_STEPS,
         fp16=not use_bf16,
         bf16=use_bf16,
