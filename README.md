@@ -3,9 +3,13 @@
 [![Unsloth](https://img.shields.io/badge/Unsloth-2026.6.9-blue)](https://unsloth.ai)
 [![Model](https://img.shields.io/badge/Model-Qwen2.5--0.5B--Instruct-bnb--4bit-green)](https://huggingface.co/unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit)
 [![Dataset](https://img.shields.io/badge/Dataset-medical--o1--reasoning--SFT-orange)](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT)
+[![HuggingFace](https://img.shields.io/badge/🤗_HuggingFace-Model-yellow)](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b)
+[![GitHub](https://img.shields.io/badge/GitHub-Source-lightgrey)](https://github.com/bbpeople/medical-o1-finetune)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
 基于 **Qwen2.5-0.5B-Instruct**，使用 **Unsloth + QLoRA** 在 **RTX 3050 (4GB VRAM)** 上微调医疗推理问答。
+
+> 📦 **模型权重已发布到 HuggingFace**：[xjh666/medical-o1-qwen2.5-0.5b](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b)
 
 模型学会先进行 `<think>` 推理链思考，再给出最终答案（类似 o1 风格）。
 
@@ -36,6 +40,35 @@
 | 驱动 | NVIDIA 驱动 ≥ 550（支持 CUDA 12.1+） |
 | Python | 3.10 或 3.12 |
 | 硬盘 | ≥ 10GB 可用空间 |
+
+### 使用预训练模型（推荐）
+
+训练好的 LoRA 适配器已上传 HuggingFace，几行代码即可加载：
+
+```python
+from unsloth import FastLanguageModel
+
+model, tokenizer = FastLanguageModel.from_pretrained(
+    model_name="xjh666/medical-o1-qwen2.5-0.5b",   # 自动加载 LoRA + 基座
+    max_seq_length=1024,
+    load_in_4bit=True,
+)
+FastLanguageModel.for_inference(model)
+
+messages = [
+    {"role": "user", "content": "What causes fever and productive cough 48h after ICU admission?"},
+]
+inputs = tokenizer.apply_chat_template(
+    messages, add_generation_prompt=True, tokenize=True, return_tensors="pt"
+).to("cuda")
+
+outputs = model.generate(input_ids=inputs, max_new_tokens=512, temperature=0.1)
+print(tokenizer.decode(outputs[0][inputs.shape[1]:], skip_special_tokens=True))
+```
+
+> 完整 16-bit 合并权重也一并上传，可在 `merged_16bit/` 目录下载。
+
+---
 
 ### 安装
 
