@@ -13,6 +13,9 @@ unsloth_compiled_cache/
 output_qwen05b_medical_o1/
 checkpoints/
 
+# 评估结果（生成产物，非源码）
+eval_*.txt
+
 # 大文件
 *.bin
 *.pt
