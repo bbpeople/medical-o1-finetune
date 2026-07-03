@@ -220,6 +220,21 @@ def main():
         loftq_config=None,
     )
 
+    # 如果指定了 checkpoint，加载已训练的 LoRA 权重（绕过 trainer resume 的 pickle 问题）
+    if args.resume_from_checkpoint is not None:
+        ckpt_path = args.resume_from_checkpoint
+        adapter_file = os.path.join(ckpt_path, "adapter_model.safetensors")
+        if os.path.exists(adapter_file):
+            print(f"\n  加载已训练的 LoRA 权重: {ckpt_path}")
+            from safetensors.torch import load_file
+            state_dict = load_file(adapter_file)
+            model.load_state_dict(state_dict, strict=False)
+            print(f"  ✅ LoRA 权重已加载（{len(state_dict)} 个张量），继续训练")
+        else:
+            print(f"  ⚠️ 未找到 adapter_model.safetensors，以随机初始化继续")
+        # 清空 resume_from_checkpoint，防止 trainer 再去找 trainer_state.json
+        args.resume_from_checkpoint = None
+
     # 获取 Qwen2.5 的 chat template
     tokenizer = get_chat_template(
         tokenizer,
