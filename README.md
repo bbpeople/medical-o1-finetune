@@ -1,7 +1,7 @@
 # 🏥 Medical Qwen — 医疗问答微调
 
 [![Unsloth](https://img.shields.io/badge/Unsloth-2026.6.9-blue)](https://unsloth.ai)
-[![Model](https://img.shields.io/badge/Model-Qwen2.5--0.5B--Instruct-bnb--4bit-green)](https://huggingface.co/unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit)
+[![Model](https://img.shields.io/badge/Model-Qwen2.5--0.5B--Instruct--bnb--4bit-green)](https://huggingface.co/unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit)
 [![Dataset](https://img.shields.io/badge/Dataset-medical--o1--reasoning--SFT-orange)](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT)
 [![HuggingFace](https://img.shields.io/badge/🤗_HuggingFace-Model-yellow)](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b)
 [![GitHub](https://img.shields.io/badge/GitHub-Source-lightgrey)](https://github.com/bbpeople/medical-o1-finetune)
