@@ -27,11 +27,13 @@ from datasets import load_dataset
 from transformers import TextStreamer
 
 # ── 配置（与训练脚本保持一致）──
-MODEL_NAME = "unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit"
-MAX_SEQ_LENGTH = 1024              # 与训练脚本一致，4GB VRAM 安全
+MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
+MAX_SEQ_LENGTH = 512              # 与训练脚本一致，1.5B 在 4GB VRAM 下的安全值
 DATASET_NAME = "FreedomIntelligence/medical-o1-reasoning-SFT"
 DATASET_CONFIG = "en"
-OUTPUT_DIR = "./output_qwen05b_medical_o1"
+# 输出目录按基座规格命名，与 train_medical_o1.py 保持一致
+BASE_SIZE = "1.5B"
+OUTPUT_DIR = f"./output_qwen{BASE_SIZE.replace('.', '')}b_medical_o1"
 
 
 def extract_think_answer(text: str):

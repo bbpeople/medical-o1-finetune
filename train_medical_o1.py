@@ -1,10 +1,10 @@
 """
 =============================================================================
- Qwen2.5-0.5B-Instruct + Unsloth + QLoRA 医疗问答微调
+ Qwen2.5-Instruct + Unsloth + QLoRA 医疗问答微调
 =============================================================================
- 基座: unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit
+ 基座: unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit (默认；可改 BASE_SIZE / MODEL_NAME)
  数据: FreedomIntelligence/medical-o1-reasoning-SFT (英文子集)
- 硬件: RTX 3050 (4GB VRAM)
+ 硬件: RTX 3050 (4GB VRAM) — 1.5B 需 MAX_SEQ_LENGTH=512 才能跑通
  方法: QLoRA (4-bit NF4) + Unsloth 优化内核
 =============================================================================
 """
@@ -73,8 +73,9 @@ class ManualSaveCallback(TrainerCallback):
 # ═════════════════════════════════════════════════════════════════════════
 
 # --- 模型 ---
-MODEL_NAME = "unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit"
-MAX_SEQ_LENGTH = 1024                # 4GB VRAM 减半，数据 avg=649 够用
+BASE_SIZE = "1.5B"                   # 当前基座规格，用于输出目录命名与打印
+MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit"
+MAX_SEQ_LENGTH = 512                 # RTX 3050 4GB 跑 1.5B 必须 512；训练时长样本会被截断
 LOAD_IN_4BIT = True
 DTYPE = None                         # 自动选择 fp16/bf16
 
@@ -111,7 +112,8 @@ DATASET_SPLIT = "train"
 EVAL_SPLIT_RATIO = 0.05              # 从训练集切 5% 做验证
 
 # --- 输出 ---
-OUTPUT_DIR = "./output_qwen05b_medical_o1"
+# 输出目录按基座规格命名，避免不同基座的 checkpoint / LoRA 互相覆盖
+OUTPUT_DIR = f"./output_qwen{BASE_SIZE.replace('.', '')}b_medical_o1"  # e.g. output_qwen15b_medical_o1
 HUB_MODEL_ID = None                  # 如要上传 HF 请填写 "your-namespace/model-name"
 SAVE_MERGED_16BIT = True             # 训练完 merge 成 16-bit 权重
 
@@ -185,12 +187,13 @@ def main():
 
     # ── 打印配置 ──
     print("=" * 60)
-    print("    Qwen2.5-0.5B + Unsloth + QLoRA  医疗问答微调")
+    print(f"    Qwen2.5-{BASE_SIZE} + Unsloth + QLoRA  医疗问答微调")
     print("=" * 60)
     print(f"  模型:     {MODEL_NAME}")
     print(f"  数据:     {DATASET_NAME} ({DATASET_CONFIG})")
     print(f"  批次:     {BATCH_SIZE} × {GRADIENT_ACCUMULATION_STEPS} (有效={BATCH_SIZE * GRADIENT_ACCUMULATION_STEPS})")
     print(f"  精度:     4-bit QLoRA")
+    print(f"  序列:     {MAX_SEQ_LENGTH}")
     print(f"  显存:     RTX 3050 (4GB)")
     print(f"  输出:     {OUTPUT_DIR}")
     print("=" * 60)

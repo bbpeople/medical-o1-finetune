@@ -1,21 +1,36 @@
 # 🏥 Medical Qwen — 医疗问答微调
 
 [![Unsloth](https://img.shields.io/badge/Unsloth-2026.6.9-blue)](https://unsloth.ai)
-[![Model](https://img.shields.io/badge/Model-Qwen2.5--0.5B--Instruct--bnb--4bit-green)](https://huggingface.co/unsloth/Qwen2.5-0.5B-Instruct-bnb-4bit)
+[![Model](https://img.shields.io/badge/Model-Qwen2.5--1.5B--Instruct--bnb--4bit-green)](https://huggingface.co/unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit)
 [![Dataset](https://img.shields.io/badge/Dataset-medical--o1--reasoning--SFT-orange)](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT)
 [![HuggingFace](https://img.shields.io/badge/🤗_HuggingFace-Model-yellow)](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b)
 [![GitHub](https://img.shields.io/badge/GitHub-Source-lightgrey)](https://github.com/bbpeople/medical-o1-finetune)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
-基于 **Qwen2.5-0.5B-Instruct**，使用 **Unsloth + QLoRA** 在 **RTX 3050 (4GB VRAM)** 上微调医疗推理问答。
+基于 **Qwen2.5-1.5B-Instruct**（在 RTX 3050 4GB 上需 `MAX_SEQ_LENGTH=512`），使用 **Unsloth + QLoRA** 微调医疗推理问答。
 
-> 📦 **模型权重已发布到 HuggingFace**：[xjh666/medical-o1-qwen2.5-0.5b](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b)
+> 📦 **历史 0.5B 模型权重**（已发布）：[xjh666/medical-o1-qwen2.5-0.5b](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b) —— 1.5B 权重待训练后上传。
 
 模型学会先进行 `<think>` 推理链思考，再给出最终答案（类似 o1 风格）。
 
 ---
 
-## 📊 训练结果
+## 📊 训练结果（1.5B，待训练补充）
+
+| 指标 | 1 epoch | 2 epoch |
+|------|:-------:|:-------:|
+| 训练 Loss | — | — |
+| 验证 Loss (最终) | — | — |
+| 答案关键词重叠 (50条) | — | — |
+| 推理关键词重叠 (50条) | — | — |
+| 训练耗时 | — | — |
+| 峰值显存 | — | — |
+
+> ⏳ 当前默认基座已由 0.5B 切换为 1.5B（见 `train_medical_o1.py` / `eval_medical_o1.py`），1.5B 训练完成后将回填本表。下方为 0.5B 历史基线，用于对比。
+
+---
+
+## 📊 历史 0.5B 基线（已发布）
 
 | 指标 | 1 epoch | 2 epoch |
 |------|:-------:|:-------:|
@@ -26,7 +41,7 @@
 | 训练耗时 | ~6h | ~12h |
 | 峰值显存 | 6.1 GB (merge阶段) | — |
 
-> **基线对比**：未训练的 checkpoint-50 答案重叠仅 18%。2 epoch 提升至 48%，模型在 ICU 感染判断、尿道解剖定位、孕产妇管理等医学问题上均表现正确。
+> **基线对比**：未训练的 checkpoint-50 答案重叠仅 18%。2 epoch 提升至 48%，模型在 ICU 感染判断、尿道解剖定位、孕产妇管理等医学问题上均表现正确。**升级动机**：0.5B 容量有限，在 HAP 病原谱、Wernicke 脑病等需要注入临床知识的鉴别诊断上仍答错，故切到 1.5B 对比。
 
 ---
 
@@ -102,7 +117,7 @@ python train_medical_o1.py --num_epochs 1
 python train_medical_o1.py --max_steps 200
 
 # 从 checkpoint 恢复
-python train_medical_o1.py --resume_from_checkpoint ./output_qwen05b_medical_o1/checkpoint-2000
+python train_medical_o1.py --resume_from_checkpoint ./output_qwen15b_medical_o1/checkpoint-2000
 
 # 中文数据（修改脚本中 DATASET_CONFIG = "zh"）
 ```
@@ -111,10 +126,10 @@ python train_medical_o1.py --resume_from_checkpoint ./output_qwen05b_medical_o1/
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
-| 基座模型 | Qwen2.5-0.5B-Instruct-bnb-4bit | 4-bit 量化 |
+| 基座模型 | Qwen2.5-1.5B-Instruct-bnb-4bit | 4-bit 量化 |
 | LoRA rank | 16 | — |
 | Batch size | 1 × 8 (gradient accum) | 有效 batch=8 |
-| Max seq length | 1024 | 适配 4GB 显存 |
+| Max seq length | 512 | 适配 4GB 显存（1.5B 需降 seq） |
 | Learning rate | 2e-4 | cosine 调度 |
 | 优化器 | adamw_8bit | 8-bit 省显存 |
 | 保存策略 | 每 200 步 | 自定义 callback，保留最近 3 个 |
@@ -122,7 +137,7 @@ python train_medical_o1.py --resume_from_checkpoint ./output_qwen05b_medical_o1/
 ### 训练监控
 
 ```bash
-tensorboard --logdir ./output_qwen05b_medical_o1
+tensorboard --logdir ./output_qwen15b_medical_o1
 # 浏览器打开 http://localhost:6006
 ```
 
@@ -138,7 +153,7 @@ python eval_medical_o1.py
 python eval_medical_o1.py --num_samples 50 --output eval_results.txt
 
 # 评估指定 checkpoint
-python eval_medical_o1.py --checkpoint ./output_qwen05b_medical_o1/checkpoint-2000 --num_samples 50
+python eval_medical_o1.py --checkpoint ./output_qwen15b_medical_o1/checkpoint-2000 --num_samples 50
 ```
 
 ### 评估输出示例
@@ -164,7 +179,7 @@ python eval_medical_o1.py --checkpoint ./output_qwen05b_medical_o1/checkpoint-20
 ├── requirements.txt            # 依赖清单
 ├── README.md                   # 本文件
 ├── .gitignore
-└── output_qwen05b_medical_o1/  # 训练输出（gitignore）
+└── output_qwen15b_medical_o1/  # 训练输出（gitignore）
     ├── lora_adapter/           # LoRA 适配器 (~45MB)
     ├── merged_16bit/           # 完整 16-bit 权重 (~950MB)
     ├── checkpoint-N/           # 中间 checkpoint（每 200 步）
@@ -179,9 +194,9 @@ python eval_medical_o1.py --checkpoint ./output_qwen05b_medical_o1/checkpoint-20
 
 ```python
 # 显存优化（4GB VRAM 建议值）
-BATCH_SIZE = 1                    # 可降为 1
-GRADIENT_ACCUMULATION_STEPS = 8   # 可升到 8 补偿 batch
-MAX_SEQ_LENGTH = 1024             # 可降到 512
+BATCH_SIZE = 1                    # 4GB VRAM 最小值
+GRADIENT_ACCUMULATION_STEPS = 8   # 可升到 8 补偿 batch (有效 batch=8)
+MAX_SEQ_LENGTH = 512              # 1.5B 在 4GB VRAM 下需 512；0.5B 可用 1024
 ```
 
 ---
