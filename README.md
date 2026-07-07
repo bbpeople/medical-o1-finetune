@@ -210,6 +210,26 @@ MAX_SEQ_LENGTH = 512              # 1.5B 在 4GB VRAM 下需 512；0.5B 可用 1
 | `PYTHONPATH` 冲突 | 运行时 `PYTHONPATH="" python train_medical_o1.py` |
 | CUDA 不可用 | 检查 `nvidia-smi`，重装匹配的 PyTorch |
 
+### 关于 checkpoint 恢复（resume）
+
+`ManualSaveCallback` 每个 checkpoint 写入以下文件，全部绕过 HF 原生 `_save_checkpoint` 的 pickle 路径：
+
+- `adapter_model.safetensors` + `adapter_config.json` —— LoRA 权重
+- `trainer_state.json` —— HF 标准 `TrainerState`，记录 `global_step` / `epoch`
+- `optimizer.pt` + `scheduler.pt` —— **尽力保存**；8-bit 优化器（bitsandbytes / paged_adamw）的 state 有时无法被 `torch.save` pickle，失败则自动跳过
+- `rng_state.pth` —— 复现随机性，失败仅跳过
+
+恢复时的行为：
+
+| checkpoint 内容 | resume 行为 |
+|------|------|
+| 含 `trainer_state.json` + `optimizer.pt` + `scheduler.pt` | **完整无偏续训**（权重 + 优化器 + 调度器 + 步数全部恢复）|
+| 含 `trainer_state.json`，缺 `optimizer.pt`/`scheduler.pt` | **近似续训**（恢复 LoRA 权重 + 学习率位置，优化器动量重置）|
+| 旧式 checkpoint（只有 `training_state.pt`，无 `trainer_state.json`）| 自动回退到「加载 LoRA 权重 + 从 0 训练」（旧行为）|
+
+> ⚠️ **旧 checkpoint 兼容性**：升级到 1.5B 之前、由旧脚本（0.5B 时期）产生的 checkpoint 目录**没有 `trainer_state.json`**，新 resume 逻辑会自动把它们识别为旧式并走"加载权重 + 从 0 训练"路径——**不会**做真正的步数续训。要从 1.5B 训练中途恢复，请用**新脚本产生的 checkpoint**。  
+> ⚠️ "近似续训"指 optimizer 动量（Adam 的一阶/二阶矩）被重置，学习率会从断点位置继续走 cosine，但不等于数学上无偏的续训。完整无偏续训要求 optimizer.pt 成功保存。
+
 ---
 
 ## 📖 引用

@@ -28,7 +28,20 @@ from trl import SFTTrainer
 # 自定义 Callback：绕过 Unsloth pickle 崩溃，手动保存 checkpoint
 # ═════════════════════════════════════════════════════════════════════════
 class ManualSaveCallback(TrainerCallback):
-    """每 save_steps 步用 model.save_pretrained() 保存 checkpoint，不经过 pickle。"""
+    """每 save_steps 步用 model.save_pretrained() 保存 checkpoint，不经过 pickle。
+
+    保存内容（全部绕过 HF Trainer 原生 _save_checkpoint，规避 Unsloth pickle 崩溃）：
+      - adapter_model.safetensors + adapter_config.json  (LoRA 权重，save_pretrained)
+      - trainer_state.json        (HF TrainerState，标准 JSON，无 pickle)
+      - optimizer.pt / scheduler.pt  (尽量写，失败则降级为近似续训 — 见 on_step_end)
+      - rng_state.pth             (尽量写，失败则跳过)
+
+    resume 时把 checkpoint 路径传给 trainer.train(resume_from_checkpoint=...)，
+    HF 的 _load_optimizer_and_scheduler 只在 optimizer.pt + scheduler.pt 同时存在时
+    才恢复优化器/调度器状态，否则优雅降级（只恢复 adapter 权重 + global_step，
+    optimizer 从零初始化 = 近似续训）。这样可以在"optimizer 是否能被 torch.save"
+    不确定时，先尝试完整保存，崩了自动退化为安全路径。
+    """
 
     def __init__(self, save_steps, output_dir, save_total_limit=3):
         self.save_steps = save_steps
@@ -36,6 +49,21 @@ class ManualSaveCallback(TrainerCallback):
         self.save_total_limit = save_total_limit
         self._checkpoint_dirs = []
         self._last_save_step = 0
+
+    @staticmethod
+    def _gather_rng_states():
+        """收集 CPU/Python/CUDA 三种 RNG 状态，供 resume 复现随机性。"""
+        import random
+        rng = {
+            "python": random.getstate(),
+            "cpu": torch.get_rng_state(),
+        }
+        try:
+            if torch.cuda.is_available():
+                rng["cuda"] = torch.cuda.get_rng_state_all()
+        except Exception:
+            pass
+        return rng
 
     def on_step_end(self, args, state, control, **kwargs):
         if state.global_step == 0:
@@ -46,16 +74,41 @@ class ManualSaveCallback(TrainerCallback):
             ckpt_dir = os.path.join(self.output_dir, f"checkpoint-{state.global_step}")
             os.makedirs(ckpt_dir, exist_ok=True)
             print(f"\n  💾 手动保存 checkpoint → {ckpt_dir}")
-            # 从 kwargs 或 trainer 属性获取 model 和 tokenizer
-            model = kwargs.get("model") or kwargs.get("trainer").model
-            tokenizer = kwargs.get("tokenizer") or getattr(kwargs.get("trainer"), "tokenizer", None)
+            # 从 kwargs 或 trainer 属性获取 model / tokenizer / trainer
+            trainer = kwargs.get("trainer")
+            model = kwargs.get("model") or (trainer.model if trainer else None)
+            tokenizer = (kwargs.get("tokenizer")
+                         or getattr(trainer, "tokenizer", None)) if trainer else None
+
+            # 1) LoRA adapter 权重（save_pretrained，不走 pickle）
             if model is not None:
                 model.save_pretrained(ckpt_dir)
             if tokenizer is not None:
                 tokenizer.save_pretrained(ckpt_dir)
-            # 保存训练参数（只保存我们自己的配置 dict，避免 pickle 崩溃）
-            torch.save({"step": state.global_step, "best_metric": state.best_metric},
-                       os.path.join(ckpt_dir, "training_state.pt"))
+
+            # 2) trainer_state.json —— 用 HF 自带 TrainerState 序列化，零拼装风险。
+            #    必须有它，resume 时 HF 才能读出 global_step / epoch 正确续训。
+            try:
+                state.save_to_json(os.path.join(ckpt_dir, "trainer_state.json"))
+                print(f"  ✅ trainer_state.json (global_step={state.global_step})")
+            except Exception as e:
+                print(f"  ⚠️ trainer_state.json 保存失败: {e}（resume 将无法恢复步数，从 0 开始）")
+
+            # 3) optimizer.pt + scheduler.pt —— 尽量写，失败则降级。
+            #    8-bit 优化器 (bitsandbytes / paged_adamw_8bit) 的 state_dict 有时无法被
+            #    torch.save/pickle；崩了就跳过，HF resume 会自动走近似续训路径。
+            opt_ok = self._try_save_optimizer_scheduler(trainer, ckpt_dir)
+            if not opt_ok:
+                print("  ⚠️ optimizer.pt/scheduler.pt 未保存 → resume 将退化为【近似续训】")
+                print("     （仅恢复 LoRA 权重 + 学习率位置，优化器动量重置）")
+
+            # 4) rng_state.pth —— 尽量写，复现随机性（失败仅跳过，不影响续训）。
+            try:
+                torch.save(self._gather_rng_states(),
+                           os.path.join(ckpt_dir, "rng_state.pth"))
+            except Exception as e:
+                print(f"  ⚠️ rng_state.pth 保存失败: {e}（跳过，不影响续训）")
+
             self._checkpoint_dirs.append(ckpt_dir)
             print(f"  ✅ checkpoint-{state.global_step} 保存成功")
             # 清理旧 checkpoint
@@ -66,6 +119,31 @@ class ManualSaveCallback(TrainerCallback):
                 print(f"  🗑️ 清理旧 checkpoint: {old_dir}")
             print()
         return control
+
+    @staticmethod
+    def _try_save_optimizer_scheduler(trainer, ckpt_dir):
+        """尝试保存 optimizer.pt + scheduler.pt。成功返回 True，任一失败返回 False。"""
+        if trainer is None or getattr(trainer, "optimizer", None) is None:
+            return False
+        try:
+            torch.save(trainer.optimizer.state_dict(),
+                       os.path.join(ckpt_dir, "optimizer.pt"))
+            torch.save(trainer.lr_scheduler.state_dict()
+                       if trainer.lr_scheduler is not None else {},
+                       os.path.join(ckpt_dir, "scheduler.pt"))
+            print("  ✅ optimizer.pt + scheduler.pt")
+            return True
+        except Exception as e:
+            print(f"  ⚠️ optimizer/scheduler 保存失败: {e}")
+            # 清理可能写了一半的文件，避免半成品误导 resume
+            for f in ("optimizer.pt", "scheduler.pt"):
+                p = os.path.join(ckpt_dir, f)
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+            return False
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -223,20 +301,43 @@ def main():
         loftq_config=None,
     )
 
-    # 如果指定了 checkpoint，加载已训练的 LoRA 权重（绕过 trainer resume 的 pickle 问题）
+    # 如果指定了 checkpoint，按以下策略恢复训练：
+    #   ✅ 新 checkpoint（含 trainer_state.json）：保留路径传给 trainer.train()，
+    #      由 HF 原生 _load_from_checkpoint + _load_optimizer_and_scheduler 处理：
+    #        - adapter 权重自动 load（PEFT 标准路径）
+    #        - 若 optimizer.pt + scheduler.pt 同时存在 → 完整无偏续训
+    #        - 若不存在 → 优雅降级：只恢复 adapter + global_step，optimizer 重置（近似续训）
+    #   ⚠️ 旧 checkpoint（只有 training_state.pt，无 trainer_state.json）：
+    #      HF 无法读出 global_step，回退到「手动加载 LoRA 权重 + 从 0 训练」的旧行为。
     if args.resume_from_checkpoint is not None:
         ckpt_path = args.resume_from_checkpoint
+        has_trainer_state = os.path.exists(os.path.join(ckpt_path, "trainer_state.json"))
         adapter_file = os.path.join(ckpt_path, "adapter_model.safetensors")
-        if os.path.exists(adapter_file):
-            print(f"\n  加载已训练的 LoRA 权重: {ckpt_path}")
-            from safetensors.torch import load_file
-            state_dict = load_file(adapter_file)
-            model.load_state_dict(state_dict, strict=False)
-            print(f"  ✅ LoRA 权重已加载（{len(state_dict)} 个张量），继续训练")
+
+        if has_trainer_state:
+            print(f"\n  🔁 检测到新式 checkpoint（含 trainer_state.json）：{ckpt_path}")
+            opt_present = os.path.exists(os.path.join(ckpt_path, "optimizer.pt"))
+            sched_present = os.path.exists(os.path.join(ckpt_path, "scheduler.pt"))
+            if opt_present and sched_present:
+                print("     ✅ optimizer.pt + scheduler.pt 存在 → 将执行完整无偏续训")
+            else:
+                print("     ⚠️ 缺 optimizer.pt/scheduler.pt → 将退化为【近似续训】")
+                print("        （恢复 LoRA 权重 + 学习率位置，优化器动量重置）")
+            print("     → 保留路径，交由 trainer.train(resume_from_checkpoint=...) 原生处理")
+            # 不清空 args.resume_from_checkpoint，HF 在 train() 中读取它
         else:
-            print(f"  ⚠️ 未找到 adapter_model.safetensors，以随机初始化继续")
-        # 清空 resume_from_checkpoint，防止 trainer 再去找 trainer_state.json
-        args.resume_from_checkpoint = None
+            print(f"\n  ⚠️ 旧式 checkpoint（无 trainer_state.json）：{ckpt_path}")
+            print("     HF resume 无法读出训练步数，回退到「加载 LoRA 权重 + 从 0 训练」。")
+            if os.path.exists(adapter_file):
+                print(f"     手动加载 LoRA 权重...")
+                from safetensors.torch import load_file
+                state_dict = load_file(adapter_file)
+                model.load_state_dict(state_dict, strict=False)
+                print(f"  ✅ LoRA 权重已加载（{len(state_dict)} 个张量）")
+            else:
+                print(f"  ⚠️ 未找到 adapter_model.safetensors，以随机初始化继续")
+            # 清空，防止 trainer.train(resume_from_checkpoint=...) 去找一个无 trainer_state 的目录
+            args.resume_from_checkpoint = None
 
     # 获取 Qwen2.5 的 chat template
     tokenizer = get_chat_template(
@@ -346,7 +447,38 @@ def main():
     start_gpu_memory = torch.cuda.max_memory_reserved() / 1024**3
 
     torch.cuda.empty_cache()          # 清理碎片显存
-    trainer_stats = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+
+    # Fail-safe：HF 原生 resume 在极少数情况下可能抛错（如 adapter_config.json 缺失、
+    # optimizer state 版本不匹配等）。捕获后回退到「手动加载 LoRA + 从 0 训」并重试一次，
+    # 保证训练能继续推进，而不是直接崩在起点（此时尚未真正开始训练，无进度损失风险）。
+    try:
+        trainer_stats = trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    except Exception as resume_err:
+        if args.resume_from_checkpoint is None:
+            raise                # 真正的新训练都崩了，应如实抛出，不要吞掉
+        print(f"\n  ⚠️ HF 原生 resume 失败: {resume_err}")
+        print("     回退到「手动加载 LoRA 权重 + 从 0 训练」并重试 ...")
+        ckpt_path = args.resume_from_checkpoint
+        adapter_file = os.path.join(ckpt_path, "adapter_model.safetensors")
+        loaded = False
+        if os.path.exists(adapter_file):
+            try:
+                from safetensors.torch import load_file
+                sd = load_file(adapter_file)
+                model.load_state_dict(sd, strict=False)
+                print(f"  ✅ LoRA 权重已手动加载（{len(sd)} 个张量）")
+                loaded = True
+            except Exception as e2:
+                print(f"  ⚠️ 手动加载 LoRA 也失败: {e2}（将以随机初始化重训）")
+        else:
+            print(f"  ⚠️ checkpoint 无 adapter_model.safetensors，随机初始化重训")
+        # 注：此处不重建 optimizer/scheduler。HF Trainer.train(resume_from_checkpoint=None)
+        # 会从 global_step=0 重新计数（lr 走完整 warmup+cosine），最坏情况下 resume 失败前
+        # 可能已半写入 optimizer 动量，这只会让早期几步的更新轨迹略有偏差，不构成 bug。
+        torch.cuda.empty_cache()
+        trainer_stats = trainer.train(resume_from_checkpoint=None)
+        if loaded:
+            print("  ⚠️ 本次为【从 0 重训 + LoRA 权重预热】，不等于原步数无偏续训")
 
     # ── 训练完成统计 ──
     print("=" * 60)
