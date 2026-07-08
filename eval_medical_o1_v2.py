@@ -118,35 +118,41 @@ def extract_think_answer(text: str):
 # ═══════════════════════════════════════════════════════════════════════
 
 def build_prompt(tokenizer, question: str):
-    return tokenizer.apply_chat_template(
+    """return_tensors=''pt'' 在 transformers 5.5 返回 BatchEncoding,取 input_ids/attention_mask。"""
+    enc = tokenizer.apply_chat_template(
         [{"role": "user", "content": question}],
         add_generation_prompt=True,
         tokenize=True,
         return_tensors="pt",
     )
+    return enc.input_ids, enc.attention_mask
 
 
 @torch.inference_mode()
 def generate_answer(model, tokenizer, question: str, device,
                     max_new_tokens=512):
-    """贪心解码,返回生成的续写文本(不含 prompt)。OOM 降级 256 重试一次。"""
-    inputs = build_prompt(tokenizer, question).to(device)
+    """Greedy decode. Return generated text (excluding prompt). OOM retry at half tokens."""
+    input_ids, attention_mask = build_prompt(tokenizer, question)
+    input_ids = input_ids.to(device)
+    attention_mask = attention_mask.to(device)
+    prompt_len = input_ids.shape[1]
 
     def _gen(mnt):
         out = model.generate(
-            input_ids=inputs,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
             max_new_tokens=mnt,
-            do_sample=False,            # 贪心,确定性
+            do_sample=False,
             pad_token_id=tokenizer.eos_token_id,
         )
-        return tokenizer.decode(out[0][inputs.shape[1]:], skip_special_tokens=True)
+        return tokenizer.decode(out[0][prompt_len:], skip_special_tokens=True)
 
     try:
         text = _gen(max_new_tokens)
     except (torch.cuda.OutOfMemoryError, RuntimeError) as e:
         if device == "cuda":
             torch.cuda.empty_cache()
-        text = _gen(max(64, max_new_tokens // 2))   # 降级
+        text = _gen(max(64, max_new_tokens // 2))
     finally:
         if device == "cuda":
             torch.cuda.empty_cache()
@@ -163,9 +169,17 @@ def main():
                         default="output_qwen15b_medical_o1/merged_16bit")
     parser.add_argument("--num_open", type=int, default=50,
                         help="开放问答样本数(默认50;0=全量 holdout)")
-    parser.add_argument("--max_new_tokens", type=int, default=512)
+    parser.add_argument("--num_mc", type=int, default=0,
+                        help="选择题样本数(默认0=全量;用于冒烟测试)")
+    parser.add_argument("--max_new_tokens", type=int, default=400,
+                        help="开放问答 max_new_tokens")
+    parser.add_argument("--max_new_tokens_mc", type=int, default=250,
+                        help="选择题 max_new_tokens(降低可加速,模型通常150内出字母)")
     parser.add_argument("--device", type=str, default="cuda",
                         help="cuda 或 cpu")
+    parser.add_argument("--load_in_4bit", action="store_true", default=True,
+                        help="GPU时用4bit量化加载,适配小显存")
+    parser.add_argument("--no_load_in_4bit", dest="load_in_4bit", action="store_false")
     parser.add_argument("--resume", action="store_true",
                         help="从已有 JSON 续跑(跳过已完成题)")
     parser.add_argument("--out_prefix", type=str,
@@ -187,25 +201,37 @@ def main():
     print("  医疗问答评估 v2 (命中率 + 关键词重叠)")
     print("=" * 64)
     print(f"  模型:      {args.model_dir}")
-    print(f"  设备:      {device}")
+    print(f"  设备:      {device}  (4bit={args.load_in_4bit and device=='cuda'})")
     print(f"  开放问答数: {args.num_open}")
-    print(f"  max_new_tokens: {args.max_new_tokens}")
+    print(f"  max_new_tokens: mc={args.max_new_tokens_mc} open={args.max_new_tokens}")
     print(f"  解码:      贪心(do_sample=False, 确定性可复现)")
     print("=" * 64)
 
     # ── 1. 加载模型 ──
     print("\n[1/4] 加载模型...")
     t0 = time.time()
-    dtype = torch.bfloat16
-    if device == "cpu":
-        # CPU 上 bf16 也可,但某些 CPU 对 bf16 支持差;保留 bf16 以与权重一致
-        pass
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model_dir,
-        dtype=dtype,
-        low_cpu_mem_usage=True,
-        device_map=device if device == "cuda" else "cpu",
-    )
+    if device == "cuda" and args.load_in_4bit:
+        # 4bit NF4 量化加载,1.5B 仅占 ~1GB 显存,适配 4GB 小显卡;计算精度 bf16
+        from transformers import BitsAndBytesConfig
+        bnb = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_use_double_quant=True,
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_dir,
+            quantization_config=bnb,
+            low_cpu_mem_usage=True,
+            device_map="cuda",
+        )
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_dir,
+            dtype=torch.bfloat16,
+            low_cpu_mem_usage=True,
+            device_map="cuda" if device == "cuda" else "cpu",
+        )
     model.eval()
     tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
     print(f"  ✅ 模型加载完成 ({time.time()-t0:.1f}s), 参数量 "
@@ -264,7 +290,8 @@ def main():
             print(f"  ⚠️ resume 读取失败({e}),从头开始")
 
     # ── 3. 选择题命中率评估 ──
-    print(f"\n[3/4] 选择题命中率评估 ({len(mc_indices)} 条)...")
+    mc_to_eval = mc_indices if args.num_mc <= 0 else mc_indices[:args.num_mc]
+    print(f"\n[3/4] 选择题命中率评估 ({len(mc_to_eval)} 条)...")
     txt_fp = open(out_txt, "a", encoding="utf-8")
     def _flush_json():
         with open(out_json, "w", encoding="utf-8") as f:
@@ -273,7 +300,7 @@ def main():
 
     hit = 0; wrong = 0; no_letter = 0; err = 0
     per_letter = {c: {"hit": 0, "tot": 0} for c in "ABCDE"}
-    for n, i in enumerate(mc_indices):
+    for n, i in enumerate(mc_to_eval):
         if i in done_mc_ids:
             continue
         q = eval_ds[i]["Question"]
@@ -283,7 +310,7 @@ def main():
         ref_letter, _ = extract_answer_letter(gt_resp, valid_letters=opts)
         try:
             raw = generate_answer(model, tokenizer, q, device,
-                                  max_new_tokens=args.max_new_tokens)
+                                  max_new_tokens=args.max_new_tokens_mc)
             reasoning, answer = extract_think_answer(raw)
             pred_letter, src = extract_answer_letter(answer or raw,
                                                      valid_letters=opts)
@@ -313,7 +340,7 @@ def main():
         })
         status = {"hit":"✅命中","wrong":"❌答错","no_letter":"￤未给字母",
                   "eval_error":"￤评估失败"}[bucket]
-        print(f"  [{n+1}/{len(mc_indices)}] idx={i} {status} "
+        print(f"  [{n+1}/{len(mc_to_eval)}] idx={i} {status} "
               f"ref={ref_letter} pred={pred_letter} (src={src})")
         # flush 每 10 条
         if (n + 1) % 10 == 0:
