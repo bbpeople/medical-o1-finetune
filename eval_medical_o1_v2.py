@@ -267,6 +267,15 @@ def main():
     print(f"  选择题(参考字母可抽): {len(mc_indices)} 条 → 命中率分母")
     print(f"  选择题(参考字母抽不到,剔除不计分母): {len(ref_missing)} 条")
 
+    # num_mc > 0 时随机采样(N 条),而非取前 N 条(前 N 可能偏某类题)
+    if args.num_mc > 0 and args.num_mc < len(mc_indices):
+        g_mc = torch.Generator().manual_seed(args.seed)
+        perm_mc = torch.randperm(len(mc_indices), generator=g_mc)[:args.num_mc].tolist()
+        mc_indices_sampled = [mc_indices[j] for j in perm_mc]
+        print(f"  选择题随机采样 {len(mc_indices_sampled)}/{len(mc_indices)} 条")
+    else:
+        mc_indices_sampled = mc_indices
+
     # 开放问答采样(全 holdout 的随机 N 条;含选择题也无所谓,B 指标是关键词重叠)
     open_n = len(eval_ds) if args.num_open <= 0 else args.num_open
     g = torch.Generator().manual_seed(args.seed)
@@ -290,7 +299,7 @@ def main():
             print(f"  ⚠️ resume 读取失败({e}),从头开始")
 
     # ── 3. 选择题命中率评估 ──
-    mc_to_eval = mc_indices if args.num_mc <= 0 else mc_indices[:args.num_mc]
+    mc_to_eval = mc_indices_sampled
     print(f"\n[3/4] 选择题命中率评估 ({len(mc_to_eval)} 条)...")
     txt_fp = open(out_txt, "a", encoding="utf-8")
     def _flush_json():
@@ -342,8 +351,8 @@ def main():
                   "eval_error":"￤评估失败"}[bucket]
         print(f"  [{n+1}/{len(mc_to_eval)}] idx={i} {status} "
               f"ref={ref_letter} pred={pred_letter} (src={src})")
-        # flush 每 10 条
-        if (n + 1) % 10 == 0:
+        # flush 每 3 条(评估慢/样本少时崩了也少丢)
+        if (n + 1) % 3 == 0:
             _flush_json()
 
     _flush_json()
