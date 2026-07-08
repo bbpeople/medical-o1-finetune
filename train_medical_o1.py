@@ -191,7 +191,7 @@ EVAL_SPLIT_RATIO = 0.05              # 从训练集切 5% 做验证
 
 # --- 输出 ---
 # 输出目录按基座规格命名，避免不同基座的 checkpoint / LoRA 互相覆盖
-OUTPUT_DIR = f"./output_qwen{BASE_SIZE.replace('.', '')}b_medical_o1"  # e.g. output_qwen15b_medical_o1
+OUTPUT_DIR = f"./output_qwen{BASE_SIZE.lower().replace('.', '')}_medical_o1"  # e.g. output_qwen15b_medical_o1
 HUB_MODEL_ID = None                  # 如要上传 HF 请填写 "your-namespace/model-name"
 SAVE_MERGED_16BIT = True             # 训练完 merge 成 16-bit 权重
 
@@ -231,7 +231,17 @@ def format_medical_entry(example):
 
 
 def preprocess_dataset(dataset, tokenizer):
-    """对整个数据集执行格式化和 tokenize。"""
+    """对整个数据集执行格式化和 tokenize。
+
+    关键: 生成 chat template 文本后，对每条样本做【硬截断到 MAX_SEQ_LENGTH】。
+    原因: Unsloth SFTTrainer 在 transformers 5.5 下，当样本 token 数 > max_seq_length
+    时并不会在 collator 里自动截断，而是原样送进 batch；fused CE loss 的 chunked
+    计算会把 logits 切成 chunk（与 labels 长度不一致），报
+    `ValueError: Expected input batch_size (N) to match target batch_size (M)`。
+    硬截断在数据侧喂入 ≤ MAX_SEQ_LENGTH 的文本，从根上避免该不匹配。
+    （副作用: 超 MAX_SEQ_LENGTH 的样本其 assistant 答案/推理尾部会被砍掉，
+     labels 尾部变 -100；seq=512 下这是可接受代价。）
+    """
     # 1) 格式化为对话
     dataset = dataset.map(format_medical_entry, remove_columns=dataset.column_names)
 
@@ -246,6 +256,19 @@ def preprocess_dataset(dataset, tokenizer):
         },
         remove_columns=["conversation"],
     )
+
+    # 3) 硬截断到 MAX_SEQ_LENGTH：tokenize → 取前 MAX_SEQ_LENGTH → decode
+    #    这样无论 SFTTrainer collator 是否再截断，喂入的文本都不会超长。
+    _seq_limit = MAX_SEQ_LENGTH
+
+    def _truncate_text(example):
+        ids = tokenizer.encode(example["text"])
+        if len(ids) > _seq_limit:
+            ids = ids[:_seq_limit]
+            example["text"] = tokenizer.decode(ids)
+        return example
+
+    dataset = dataset.map(_truncate_text)
     return dataset
 
 

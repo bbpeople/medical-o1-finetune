@@ -33,7 +33,7 @@ DATASET_NAME = "FreedomIntelligence/medical-o1-reasoning-SFT"
 DATASET_CONFIG = "en"
 # 输出目录按基座规格命名，与 train_medical_o1.py 保持一致
 BASE_SIZE = "1.5B"
-OUTPUT_DIR = f"./output_qwen{BASE_SIZE.replace('.', '')}b_medical_o1"
+OUTPUT_DIR = f"./output_qwen{BASE_SIZE.lower().replace('.', '')}_medical_o1"
 
 
 def extract_think_answer(text: str):
