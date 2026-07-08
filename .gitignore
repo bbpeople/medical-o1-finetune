@@ -21,6 +21,10 @@ eval_*.txt
 *.pt
 *.pth
 *.gguf
+*.safetensors
+
+# 本地下载的基座权重目录（merge 用，体积大，不入库）
+base_local/
 
 # IDE
 .idea/

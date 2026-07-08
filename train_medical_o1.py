@@ -10,6 +10,7 @@
 """
 
 import os
+import sys
 os.environ["UNSLOTH_RETURN_LOGITS"] = "1"       # 跳过 fused CE，走标准 logits（4GB VRAM 必须）
 import torch
 import argparse
@@ -524,11 +525,64 @@ def main():
     print(f"  LoRA 适配器已保存至: {OUTPUT_DIR}/lora_adapter")
 
     # 可选: merge 成 16-bit 完整权重 (可用于推理/上传)
+    #
+    # ⚠️ 内存风险说明（曾导致训练后被静默 kill）：
+    # save_pretrained_merged(merged_16bit) 内部要先下载未量化基座(~3GB)、在 CPU/内存里
+    # 反量化 + merge LoRA，峰值吃 8~12GB 系统 RAM。本机仅 15.6GB RAM，训练刚结束时
+    # 残留占用会导致物理内存 OOM → python 被静默终止（无崩溃事件日志，进程干净消失），
+    # 此时 merged_16bit/ 只剩 tokenizer/config，缺 model.safetensors。
+    # LOra adapter 已在此之前保存完毕，因此【即使 merge 失败，训练成果也不丢】。
+    #
+    # 防护策略：先把 LoRA adapter 存好（见上方），再尝试 merge；
+    # merge 失败则自动回退到独立脚本 merge_medical_o1.py（CPU 低内存版）。
     if SAVE_MERGED_16BIT:
         print("  合并 LoRA → 完整 16-bit 权重...")
+        print("  ⚠️ 此步峰值需 8~12GB 系统 RAM；本机 15.6GB，请确保空闲充足，必要时先关其他大程序")
         merged_dir = os.path.join(OUTPUT_DIR, "merged_16bit")
-        model.save_pretrained_merged(merged_dir, tokenizer, save_method="merged_16bit")
-        print(f"  合并权重已保存至: {merged_dir}")
+        merge_ok = False
+        merge_err = None
+        # 预留：若已有完整产物则跳过
+        if os.path.isdir(merged_dir) and any(
+            f.endswith(".safetensors") for f in os.listdir(merged_dir)
+        ):
+            print(f"  ✅ 检测到 {merged_dir} 已有完整 *.safetensors，跳过 merge")
+            merge_ok = True
+        if not merge_ok:
+            try:
+                model.save_pretrained_merged(merged_dir, tokenizer, save_method="merged_16bit")
+                # 校验落盘确实产生了权重文件
+                if os.path.isdir(merged_dir) and any(
+                    f.endswith(".safetensors") for f in os.listdir(merged_dir)
+                ):
+                    merge_ok = True
+                    print(f"  ✅ 合并权重已保存至: {merged_dir}")
+                else:
+                    merge_err = "save_pretrained_merged 返回但未产生 *.safetensors"
+            except (MemoryError, RuntimeError, Exception) as e:
+                merge_err = repr(e)
+
+            if not merge_ok:
+                print(f"\n  ⚠️ Unsloth merge 失败（{merge_err}）。疑似物理内存 OOM。")
+                print("     训练成果（LoRA adapter）已安全存盘。")
+                print("     → 回退：调用独立低内存合并脚本 merge_medical_o1.py（CPU fp16 流式加载） ...")
+                # 在子进程里跑，即使再 OOM 也不影响当前已保存产物
+                import subprocess
+                here = os.path.dirname(os.path.abspath(__file__))
+                merge_pylog = os.path.join(here, "merge_15b.log")
+                rc = 1
+                try:
+                    rc = subprocess.call(
+                        [sys.executable, os.path.join(here, "merge_medical_o1.py")],
+                        cwd=here,
+                    )
+                except Exception as e2:
+                    print(f"  ⚠️ 子进程启动失败: {e2}")
+                if rc != 0:
+                    print(f"  ⚠️ 独立合并脚本也失败 (rc={rc})。日志见 {merge_pylog}")
+                    print("     你可稍后手动跑：")
+                    print(f"       D:\\anaconda\\envs\\kcsj_new\\python.exe merge_medical_o1.py")
+                else:
+                    print(f"  ✅ 独立合并脚本完成，产物见 merged_16bit/（日志 {merge_pylog}）")
 
     # 可选: 导出 GGUF (用于 Ollama/llama.cpp)
     # model.save_pretrained_merged(OUTPUT_DIR + "/gguf", tokenizer, save_method="gguf")
@@ -536,8 +590,11 @@ def main():
     # 可选: 上传到 Hugging Face
     if HUB_MODEL_ID:
         print(f"  上传至 Hugging Face: {HUB_MODEL_ID}...")
-        model.push_to_hub_merged(HUB_MODEL_ID, tokenizer, save_method="merged_16bit")
-        print("  上传完成!")
+        try:
+            model.push_to_hub_merged(HUB_MODEL_ID, tokenizer, save_method="merged_16bit")
+            print("  上传完成!")
+        except Exception as e:
+            print(f"  ⚠️ 上传失败: {e}（可用 merge_medical_o1.py 产物 + huggingface_hub 上传）")
 
     print("\n✅ 全部完成!")
 
