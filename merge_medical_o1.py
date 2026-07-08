@@ -98,10 +98,10 @@ def main():
     print("  ✅ tokenizer 已保存")
 
     # ── 2. 流式加载未量化基座到 CPU（峰值低）──
-    print(f"\n[2/4] 加载未量化基座 {BASE_MODEL} (CPU, fp16, low_cpu_mem_usage)...")
+    print(f"\n[2/4] 加载未量化基座 {BASE_MODEL} (CPU, bf16, low_cpu_mem_usage)...")
     base = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
-        torch_dtype=torch.float16,
+        dtype=torch.bfloat16,        # 基座权重实际是 BF16，保持原 dtype 不失真
         low_cpu_mem_usage=True,        # 流式加载，避免一次性全量驻留
         device_map="cpu",              # 强制 CPU，不碰显存
     )
