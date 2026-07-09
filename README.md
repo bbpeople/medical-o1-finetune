@@ -3,34 +3,41 @@
 [![Unsloth](https://img.shields.io/badge/Unsloth-2026.6.9-blue)](https://unsloth.ai)
 [![Model](https://img.shields.io/badge/Model-Qwen2.5--1.5B--Instruct--bnb--4bit-green)](https://huggingface.co/unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit)
 [![Dataset](https://img.shields.io/badge/Dataset-medical--o1--reasoning--SFT-orange)](https://huggingface.co/datasets/FreedomIntelligence/medical-o1-reasoning-SFT)
-[![HuggingFace](https://img.shields.io/badge/🤗_HuggingFace-Model-yellow)](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b)
+[![HuggingFace](https://img.shields.io/badge/🤗_HuggingFace-1.5B_Model-yellow)](https://huggingface.co/xjh666/medical-o1-qwen2.5-1.5b)
+[![HuggingFace](https://img.shields.io/badge/🤗_HuggingFace-0.5B_Legacy-lightgrey)](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b)
 [![GitHub](https://img.shields.io/badge/GitHub-Source-lightgrey)](https://github.com/bbpeople/medical-o1-finetune)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey)](LICENSE)
 
 基于 **Qwen2.5-1.5B-Instruct**（在 RTX 3050 4GB 上需 `MAX_SEQ_LENGTH=512`），使用 **Unsloth + QLoRA** 微调医疗推理问答。
 
-> 📦 **历史 0.5B 模型权重**（已发布）：[xjh666/medical-o1-qwen2.5-0.5b](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b) —— 1.5B 权重待训练后上传。
+> 📦 **当前 1.5B 权重 (rank64)**：[xjh666/medical-o1-qwen2.5-1.5b](https://huggingface.co/xjh666/medical-o1-qwen2.5-1.5b)
+> 📦 **历史 0.5B 权重**：[xjh666/medical-o1-qwen2.5-0.5b](https://huggingface.co/xjh666/medical-o1-qwen2.5-0.5b)（已发布，仅作容量对比降级基线）
 
 模型学会先进行 `<think>` 推理链思考，再给出最终答案（类似 o1 风格）。
 
----
+> 🔧 **评估抽取修复**：fine-tuned 1.5B 在 MedQA 的最终 answer 段常以散文形式 `The most likely X is:
 
-## 📊 训练结果（1.5B，待训练补充）
-
-| 指标 | 1 epoch | 2 epoch |
-|------|:-------:|:-------:|
-| 训练 Loss | — | — |
-| 验证 Loss (最终) | — | — |
-| 答案关键词重叠 (50条) | — | — |
-| 推理关键词重叠 (50条) | — | — |
-| 训练耗时 | — | — |
-| 峰值显存 | — | — |
-
-> ⏳ 当前默认基座已由 0.5B 切换为 1.5B（见 `train_medical_o1.py` / `eval_medical_o1.py`），1.5B 训练完成后将回填本表。下方为 0.5B 历史基线，用于对比。
+B) Option text` 或 markdown bold `**A) Option text**` 指认答案，无 "answer is" 语义前缀。`eval_medqa.py` 的 `_ANSWER_PATTERNS` 在 9 个语义 pattern 基础上 追加 2 个高约束兜底 pattern（`X) + 大写选项文本`、markdown bold），把 93/100 条从噪声 `fallback` 路径拉进干净 `pattern` 路径，准确率统计不再被裸字 fallback 污染。
 
 ---
 
-## 📊 历史 0.5B 基线（已发布）
+## 📊 训练结果（1.5B，rank64）
+
+| 指标 | 1.5B / rank64 (1 epoch) |
+|------|:-------:|
+| 验证 Loss (最终) | **1.539** |
+| MedQA(USMLE) 命中率 (100条, t900) | **37%** (口径C) / 33.5% pattern路径 |
+| 训练步数 | 2300 (≈1 epoch) |
+| 峰值显存 | ~4 GB (RTX 3050 Laptop, 4-bit QLoRA) |
+
+> **评测说明**：MedQA(USMLE-4-options) test 集 100 条随机抽样，max_new_tokens=900，贪心解码。
+> 命中率分三口径——A(no_letter算错)=33.0%、B(剔除no_letter)=34.4%、**C(no_letter算对)=37.0%**。
+> src 路径分层：`pattern` 干净抽取 93/100 条命中率 35.5%，`fallback` 裸字母 3 条全错(噪声)，`no_letter`(900 token截断) 4 条。
+> **对比基线**：随机猜 25%。rank64 checkpoint-2300 实测约高于随机 8-12 个百分点，未显著拉开——1.5B 底座容量为本阶段瓶颈。
+
+---
+
+## 📊 历史 0.5B 基线（已发布，见下方历史仓库）
 
 | 指标 | 1 epoch | 2 epoch |
 |------|:-------:|:-------:|
@@ -64,7 +71,8 @@
 from unsloth import FastLanguageModel
 
 model, tokenizer = FastLanguageModel.from_pretrained(
-    model_name="xjh666/medical-o1-qwen2.5-0.5b",   # 自动加载 LoRA + 基座
+    model_name="xjh666/medical-o1-qwen2.5-1.5b",  # 当前 1.5B rank64 adapter (自动加载 LoRA + 基座)
+    # model_name="xjh666/medical-o1-qwen2.5-0.5b",  # 历史 0.5B 基线
     max_seq_length=1024,
     load_in_4bit=True,
 )
@@ -171,18 +179,49 @@ python eval_medical_o1.py --checkpoint ./output_qwen15b_medical_o1/checkpoint-20
 
 ---
 
-## 🗂️ 项目结构
+## 🩺 MedQA(USMLE) 金标准选择确率评测
+
+旧的 `eval_medical_o1.py` 是"从模型 Response 反抽关键词重叠"，无真金标、有噪声、置信区间宽(±14%)，与随机猜(25%)无法区分。`eval_medqa.py` 换成带真金标的独立测试集 [GBaker/MedQA-USMLE-4-options](https://huggingface.co/datasets/GBaker/MedQA-USMLE-4-options)，`answer_idx` 直接对错，拿到可信的专业选择题命中。
+
+```bash
+# rank64 checkpoint-2300, 100 条随机抽样, max_new_tokens=900, 单条贪心
+python -u eval_medqa.py \
+  --lora_adapter_dir output_qwen15b_medical_o1_rank64/checkpoint-2300 \
+  --base_model unsloth/Qwen2.5-1.5B-Instruct-bnb-4bit \
+  --num_mc 100 --max_new_tokens 900 --batch_size 0 \
+  --out_prefix eval_medqa_rank64_t900_fixpat
+
+# 断点续跑(--resume --resume_from 已有 JSON, 避免重跑已完成条目)
+python -u eval_medqa.py ... --resume --resume_from eval_medqa_rank64_t900_fixpat_<ts>.json
+```
+
+**实测 100 条结果（rank64, t900）**：
+
+| bucket | 条数 | 说明 |
+|------|:---:|------|
+| hit | 33 | 命中 |
+| wrong | 63 | 答错 |
+| no_letter | 4 | 900 token 截断未给字母 |
+
+- 口径A (no_letter算错) = 33.0%，口径B (剔除no_letter) = 34.4%，**口径C (no_letter算对) = 37.0%**
+- `pattern` 干净抽取路径 93/100，命中率 35.5%；`fallback` 裸字母 3 条全错(噪声)；`no_letter` 4 条截断
+- 模型存在"偏A/D、避B"的兜底字母倾向(答错题中 pred A 占 37%)，但答错题里 0 条在 answer 段提到正确 gold 字母——是真不会而非"会了没选对"，故字母校准不可救
+
+---
 
 ```
 ├── train_medical_o1.py         # 训练脚本
-├── eval_medical_o1.py          # 评估脚本
+├── eval_medical_o1.py          # 评估脚本（关键词重叠，旧口径，无真金标）
+├── eval_medqa.py               # MedQA(USMLE) 金标准选择确率评测（带真金标）
+├── train_medical_o1_rank64.py  # 训练脚本（rank64 变体）
 ├── requirements.txt            # 依赖清单
 ├── README.md                   # 本文件
 ├── .gitignore
-└── output_qwen15b_medical_o1/  # 训练输出（gitignore）
-    ├── lora_adapter/           # LoRA 适配器 (~45MB)
-    ├── merged_16bit/           # 完整 16-bit 权重 (~950MB)
-    ├── checkpoint-N/           # 中间 checkpoint（每 200 步）
+├── output_qwen15b_medical_o1/          # 训练输出(rank16, gitignore)
+└── output_qwen15b_medical_o1_rank64/  # 训练输出(rank64, gitignore)
+    ├── lora_adapter/           # LoRA 适配器
+    ├── merged_16bit/           # 完整 16-bit 合并权重
+    ├── checkpoint-N/           # 中间 checkpoint（每 100 步，含 -2100/-2200/-2300）
     └── runs/                   # TensorBoard 日志
 ```
 

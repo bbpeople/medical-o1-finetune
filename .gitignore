@@ -26,6 +26,10 @@ eval_*.log
 *.gguf
 *.safetensors
 
+# 一次性诊断/探针脚本（根目录 probe*.py / _probe*.py，临时复现用，非源码不入库）
+/probe*.py
+/_probe*.py
+
 # 本地下载的基座权重目录（merge 用，体积大，不入库）
 base_local/
 
