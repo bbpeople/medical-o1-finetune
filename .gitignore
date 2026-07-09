@@ -48,6 +48,7 @@ venv/
 # 日志
 logs/
 *.log
+*.log.err
 
 # 临时文件
 *.tmp
