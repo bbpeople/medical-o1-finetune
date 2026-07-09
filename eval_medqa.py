@@ -80,6 +80,16 @@ _ANSWER_PATTERNS = [
     re.compile(r'(?:correct\s+)?answer\s+is\s*[:：]?\s*\(?([A-E])\)?', re.I),
     # 抓 "answer:\n\nA)" / "Answer:\nA)" (无is的冒号后换行再字母)
     re.compile(r'(?:the\s+)?answer\s*[:：]\s*\n*\(?([A-E])\)?', re.I),
+    # ── 追加(2026-07-10): 模型实际最常用格式 "X) 选项文本" ──
+    # probe6 复现 t900 那 5 条被判 fallback/wrong 的题: 模型闭合<\think>后,
+    # answer 段是散文 "The most likely X is:\n\nB) Urinalysis..." / "**A) Defect**"
+    # 直接以 "字母) 大写选项文本" 指认答案, 没有 "answer is" 语义前缀 -> 上面9个全miss,
+    # fallback 用 \b[A-E]\b 抓散文里第一个裸字母(常是错位)。这里在裸字 fallback 之前
+    # 加 "X) + 选项文本开头" 高约束 pattern: 要求 ) 紧跟空格+大写词(>=2字母), 排除
+    # "A) I think" 这类口语; (?<!\w) 防止贴着 "seeA)" 词。仅作兜底, 语义pattern仍优先。
+    re.compile(r'(?<!\w)\(?([A-E])\)?\)\s+(?:[A-Z][a-z]{2,}|[A-Z]{2,})'),
+    # markdown bold: "**A) Defect in ATM gene**" (选项号被**包裹)
+    re.compile(r'\*\*\(?\*?\s*\(?([A-E])\)?\s*\)\s*\*?\*?\s+[A-Z]'),
 ]
 _FALLBACK_LETTER_RE = re.compile(r'\b([A-E])\b')
 
