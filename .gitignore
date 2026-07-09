@@ -34,6 +34,11 @@ base_local/
 *.swp
 *.swo
 
+# Claude Code 本机配置(私有, 不入库; 但 hooks/*.sh 团队共享应保留)
+.claude/settings.local.json
+.claude/settings.json
+.claude/projects/
+
 # 环境
 .env
 .venv/
