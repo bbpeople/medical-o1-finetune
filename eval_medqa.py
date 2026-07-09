@@ -37,6 +37,10 @@ import time
 from datetime import datetime
 
 import torch
+import logging
+# 抑制 "Both max_new_tokens and max_length seem to have been set" 等刷屏警告
+# (Qwen2.5 generation_config 默认 max_length=32768 与 max_new_tokens 共存, 无害但每条生成刷一行)
+logging.getLogger("transformers.generation.utils").setLevel(logging.ERROR)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 
@@ -167,8 +171,8 @@ def main():
                         default="output_qwen15b_medical_o1/merged_16bit")
     parser.add_argument("--num_mc", type=int, default=200,
                         help="抽样题数(默认200, 置信区间约±7%); 0=全量1273")
-    parser.add_argument("--max_new_tokens", type=int, default=300,
-                        help="生成上限(模型慢思考+选字母通常200内)")
+    parser.add_argument("--max_new_tokens", type=int, default=700,
+                        help="生成上限(慢思考推理链长,需给足空间等其收尾选字母;15tok/s约46s/条)")
     parser.add_argument("--device", type=str, default="cuda",
                         help="cuda 或 cpu")
     parser.add_argument("--load_in_4bit", action="store_true", default=True,
