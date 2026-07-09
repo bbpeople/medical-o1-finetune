@@ -186,7 +186,10 @@ def main():
                         help="GPU时用4bit量化加载,适配小显存")
     parser.add_argument("--no_load_in_4bit", dest="load_in_4bit", action="store_false")
     parser.add_argument("--resume", action="store_true",
-                        help="从已有 JSON 续跑(跳过已完成题)")
+                        help="从已有 JSON 续跑(跳过已完成题; 自动找 out_prefix_<ts>.json)")
+    parser.add_argument("--resume_from", type=str, default=None,
+                        help="直接指定已有 JSON 路径续跑(避免 ts 变化导致 resume 找不到旧产物)。"
+                             "续跑写入同一文件(idx 仍按 perm 顺序补齐尚未完成的条目)。")
     parser.add_argument("--out_prefix", type=str, default="eval_medqa")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--pollution_print", action="store_true", default=True,
@@ -201,8 +204,13 @@ def main():
 
     torch.manual_seed(args.seed)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_json = f"{args.out_prefix}_{ts}.json"
-    out_txt = f"{args.out_prefix}_{ts}.txt"
+    # resume_from 优先: 锁定续跑产物到指定文件(不再用新 ts), 避免旧 130 条丢失
+    if args.resume_from:
+        out_json = args.resume_from
+        out_txt = out_json.replace(".json", ".txt")
+    else:
+        out_json = f"{args.out_prefix}_{ts}.json"
+        out_txt = f"{args.out_prefix}_{ts}.txt"
 
     print("=" * 64)
     print("  MedQA(USMLE) 真金标选择题准确率评估")
@@ -316,13 +324,15 @@ def main():
     # ── resume ──
     results = []
     done_ids = set()
-    if args.resume and os.path.exists(out_json):
+    resume_file = args.resume_from or out_json
+    do_resume = args.resume or args.resume_from
+    if do_resume and os.path.exists(resume_file):
         try:
-            with open(out_json, "r", encoding="utf-8") as f:
+            with open(resume_file, "r", encoding="utf-8") as f:
                 prev = json.load(f)
             results = prev.get("results", [])
             done_ids = {r["idx"] for r in results}
-            print(f"  🔁 resume: 跳过已完成 {len(done_ids)} 条")
+            print(f"  🔁 resume: 跳过已完成 {len(done_ids)} 条 (from {resume_file})")
         except Exception as e:
             print(f"  ⚠️ resume 读取失败({e}),从头开始")
 
