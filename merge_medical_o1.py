@@ -49,9 +49,19 @@ if os.path.exists(_local_sft) and os.path.getsize(_local_sft) > 2 * 1024**3:
     BASE_MODEL = _LOCAL_BASE
 else:
     BASE_MODEL = "unsloth/Qwen2.5-1.5B-Instruct"   # 回退到 HF（需网络/镜像）
-ADAPTER_DIR = "output_qwen15b_medical_o1/lora_adapter"
-OUTPUT_DIR = "output_qwen15b_medical_o1/merged_16bit"
+
+# ── 默认目标: rank64 的 checkpoint-2300 ──
+# 训练产出在 *_rank64/checkpoint-2300 下, 而非旧的 lora_adapter/。允许命令行覆盖以备其它checkpoint。
+_DEFAULT_ADAPTER = "output_qwen15b_medical_o1_rank64/checkpoint-2300"
+_DEFAULT_OUTPUT  = "output_qwen15b_medical_o1_rank64/merged_16bit"
+if len(sys.argv) >= 3 and not sys.argv[1].startswith("-"):
+    ADAPTER_DIR = sys.argv[1]; OUTPUT_DIR = sys.argv[2]
+else:
+    ADAPTER_DIR = _DEFAULT_ADAPTER
+    OUTPUT_DIR  = _DEFAULT_OUTPUT
 SHARD_SIZE = "500MB"        # 分片落盘，降低序列化峰值
+print(f"目标 adapter = {ADAPTER_DIR}")
+print(f"目标输出目录 = {OUTPUT_DIR}")
 
 
 def _mem(cap):
