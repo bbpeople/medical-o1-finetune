@@ -10,7 +10,8 @@ build/
 unsloth_compiled_cache/
 
 # 训练输出（按基座规格命名，如 output_qwen15b_medical_o1 / output_qwen05b_medical_o1）
-output_qwen*_medical_o1/
+# 含派生变体目录: *_rank64 / *_probe 等(通配 _medical_o1 后的任意后缀)
+output_qwen*_medical_o1*/
 checkpoints/
 
 # 评估结果（生成产物，非源码）
