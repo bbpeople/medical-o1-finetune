@@ -44,6 +44,7 @@
    D:\\anaconda\\envs\\kcsj_new\\python.exe train_medical_o1_rank64.py
    ... --num_epochs 1   (按当前决策跑 1 epoch, 8~12h, 显存压力下先验收 loss 下降)
    ... --resume_from_checkpoint output_qwen15b_medical_o1_rank64/checkpoint-XXX
+   首个 checkpoint 在 step 100(~24min), 中途被 kill 可从 checkpoint 续跑。
 =============================================================================
 """
 
@@ -86,6 +87,11 @@ import train_medical_o1
 train_medical_o1.LORA_R = 64
 train_medical_o1.LORA_ALPHA = 64
 train_medical_o1.OUTPUT_DIR = "./output_qwen15b_medical_o1_rank64"
+# rank64 显存更紧, 训练易被系统休眠/电源等因素中断, 故把首个 checkpoint 提前到
+# 100 步(~24min)、验证提前到 50 步, 这样即使中途被 kill 也有 checkpoint 可续跑,
+# 不必每次从头。原值 SAVE_STEPS=200 / EVAL_STEPS=100 对 rank16 够用, rank64 加严。
+train_medical_o1.SAVE_STEPS = 100
+train_medical_o1.EVAL_STEPS = 50
 
 # 也同步打印头里 BASE_SIZE 标注, 让训练日志清楚显示这是 rank64 变体
 # (BASE_SIZE 仍为 1.5B, 不动基座)
@@ -94,6 +100,7 @@ if __name__ == "__main__":
     print("  ⚠️ rank64 变体: LoRA rank 16->64, alpha 16->64 (缩放保持 1:1)")
     print(f"  OUTPUT_DIR = {train_medical_o1.OUTPUT_DIR}")
     print("  已装双保险: UNSLOTH_RETURN_LOGITS=1 + fused CE 固定 target_gb=0.12")
+    print("  抗中断: SAVE_STEPS=100 / EVAL_STEPS=50 (首ckpt~24min, 可resume续跑)")
     print("  其余参数同 train_medical_o1.py, 唯一变量 = 可训练容量")
     print("=" * 60)
     train_medical_o1.main()
