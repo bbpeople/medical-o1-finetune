@@ -168,9 +168,16 @@ def generate_answer(model, tokenizer, question_text: str, device,
 def main():
     parser = argparse.ArgumentParser(description="MedQA(USMLE) 真金标选择题准确率评估")
     parser.add_argument("--model_dir", type=str,
-                        default="output_qwen15b_medical_o1/merged_16bit")
+                        default="output_qwen15b_medical_o1/merged_16bit",
+                        help="已 merge 的 16-bit 产物目录(默认评估方式)")
+    parser.add_argument("--lora_adapter_dir", type=str, default=None,
+                        help="若指定, 则直接加载【未量化基座+LoRA adapter】评测(跳过 merge)。"
+                             "适配 adapter 用最新权重, 与 merged 产物同口径(均基座+LoRA 4bit推理)。"
+                             "需同时指定 --base_model")
+    parser.add_argument("--base_model", type=str, default=None,
+                        help="--lora_adapter_dir 模式下用的未量化基座名/路径, 如 unsloth/Qwen2.5-0.5B-Instruct")
     parser.add_argument("--num_mc", type=int, default=200,
-                        help="抽样题数(默认200, 置信区间约±7%); 0=全量1273")
+                        help="抽样题数(默认200, 置信区间约+-7%%); 0=全量1273")
     parser.add_argument("--max_new_tokens", type=int, default=700,
                         help="生成上限(慢思考推理链长,需给足空间等其收尾选字母;15tok/s约46s/条)")
     parser.add_argument("--device", type=str, default="cuda",
@@ -211,6 +218,9 @@ def main():
     # ── 1. 加载模型 ──
     print("\n[1/4] 加载模型...")
     t0 = time.time()
+    use_adapter = args.lora_adapter_dir is not None
+    if use_adapter and not args.base_model:
+        raise SystemExit("❌ 指定 --lora_adapter_dir 时必须同时给 --base_model (如 unsloth/Qwen2.5-0.5B-Instruct)")
     if device == "cuda" and args.load_in_4bit:
         from transformers import BitsAndBytesConfig
         bnb = BitsAndBytesConfig(
@@ -219,23 +229,53 @@ def main():
             bnb_4bit_quant_type="nf4",
             bnb_4bit_use_double_quant=True,
         )
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_dir,
-            quantization_config=bnb,
-            low_cpu_mem_usage=True,
-            device_map="cuda",
-        )
+        if use_adapter:
+            # 先 4-bit 加载未量化基座, 再套 LoRA adapter
+            from peft import PeftModel
+            base = AutoModelForCausalLM.from_pretrained(
+                args.base_model,
+                quantization_config=bnb,
+                low_cpu_mem_usage=True,
+                device_map="cuda",
+            )
+            model = PeftModel.from_pretrained(base, args.lora_adapter_dir)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                args.model_dir,
+                quantization_config=bnb,
+                low_cpu_mem_usage=True,
+                device_map="cuda",
+            )
     else:
-        model = AutoModelForCausalLM.from_pretrained(
-            args.model_dir,
-            dtype=torch.bfloat16,
-            low_cpu_mem_usage=True,
-            device_map="cuda" if device == "cuda" else "cpu",
-        )
+        if use_adapter:
+            from peft import PeftModel
+            base = AutoModelForCausalLM.from_pretrained(
+                args.base_model,
+                dtype=torch.bfloat16,
+                low_cpu_mem_usage=True,
+                device_map="cuda" if device == "cuda" else "cpu",
+            )
+            model = PeftModel.from_pretrained(base, args.lora_adapter_dir)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(
+                args.model_dir,
+                dtype=torch.bfloat16,
+                low_cpu_mem_usage=True,
+                device_map="cuda" if device == "cuda" else "cpu",
+            )
     model.eval()
-    tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
-    print(f"  ✅ 模型加载完成 ({time.time()-t0:.1f}s), 参数量 "
-          f"{sum(p.numel() for p in model.parameters())/1e9:.4f}B")
+    tok_src = args.lora_adapter_dir if use_adapter else args.model_dir
+    if use_adapter:
+        # adapter 目录里有训练时保存的 tokenizer
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(args.lora_adapter_dir)
+        except Exception:
+            tokenizer = AutoTokenizer.from_pretrained(args.base_model)
+    else:
+        tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
+    print(f"  ✅ 模型加载完成 ({time.time()-t0:.1f}s)" +
+          (f" [基座+LoRA adapter]" if use_adapter else "") +
+          f", 参数量 {sum(p.numel() for p in model.parameters())/1e9:.4f}B")
     if device == "cuda":
         reserved = torch.cuda.memory_reserved() / 1024**3
         total = torch.cuda.get_device_properties(0).total_memory / 1024**3
